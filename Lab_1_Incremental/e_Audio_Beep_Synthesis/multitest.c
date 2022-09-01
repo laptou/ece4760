@@ -90,13 +90,15 @@ typedef enum state
     state_wait_for_syllable,
     state_wait_for_chirp,
     state_active,
+    state_paused,
 } state_t;
 
 // State machine variables
-volatile state_t STATE_CORE_0 = 0;
+volatile state_t STATE_CORE_0 = state_wait_for_syllable;
 volatile unsigned int STATE_CORE_0_IRQ_COUNTER = 0;
 volatile unsigned int STATE_CORE_0_SYLLABLE_COUNTER = 0;
-volatile state_t STATE_CORE_1 = 0;
+volatile unsigned int STATE_CORE_0_PAUSE_COUNTER = 0;
+volatile state_t STATE_CORE_1 = state_wait_for_syllable;
 volatile unsigned int STATE_CORE_1_IRQ_COUNTER = 0;
 volatile unsigned int STATE_CORE_1_SYLLABLE_COUNTER = 0;
 
@@ -118,6 +120,9 @@ uint16_t DAC_data_0; // output value
 #define LDAC 8
 #define LED 25
 #define SPI_PORT spi0
+
+#define GPIO_PAUSE_CORE_1 16
+#define GPIO_PAUSE_CORE_0 15
 
 // Two variables to store core number
 volatile int corenum_0;
@@ -210,6 +215,43 @@ bool repeating_timer_callback_core_0(struct repeating_timer *t)
 {
     STATE_CORE_0_IRQ_COUNTER++;
 
+    if (STATE_CORE_0 != state_paused)
+    {
+        if (!gpio_get(GPIO_PAUSE_CORE_0))
+        {
+            STATE_CORE_0_PAUSE_COUNTER++;
+
+            if (STATE_CORE_0_PAUSE_COUNTER >= 20000)
+            {
+                STATE_CORE_0 = state_paused;
+                STATE_CORE_0_IRQ_COUNTER = 0;
+                STATE_CORE_0_PAUSE_COUNTER = 0;
+            }
+        }
+        else
+        {
+            STATE_CORE_0_PAUSE_COUNTER = 0;
+        }
+    }
+    else
+    {
+        if (!gpio_get(GPIO_PAUSE_CORE_0))
+        {
+            STATE_CORE_0_PAUSE_COUNTER++;
+
+            if (STATE_CORE_0_PAUSE_COUNTER >= 20000)
+            {
+                STATE_CORE_0 = state_wait_for_chirp;
+                STATE_CORE_0_IRQ_COUNTER = 0;
+                STATE_CORE_0_PAUSE_COUNTER = 0;
+            }
+        }
+        else
+        {
+            STATE_CORE_0_PAUSE_COUNTER = 0;
+        }
+    }
+
     switch (STATE_CORE_0)
     {
     case state_active:
@@ -241,7 +283,7 @@ bool repeating_timer_callback_core_0(struct repeating_timer *t)
         STATE_CORE_0_IRQ_COUNTER += 1;
 
         // State transition
-        if (STATE_CORE_0_IRQ_COUNTER == SYLLABLE_LENGTH)
+        if (STATE_CORE_0_IRQ_COUNTER >= SYLLABLE_LENGTH)
         {
             if (STATE_CORE_0_SYLLABLE_COUNTER >= 8)
             {
@@ -384,6 +426,14 @@ int main()
     gpio_set_dir(LED, GPIO_OUT);
     gpio_put(LED, 0);
 
+    gpio_init(GPIO_PAUSE_CORE_0);
+    gpio_set_dir(GPIO_PAUSE_CORE_0, GPIO_IN);
+    gpio_pull_up(GPIO_PAUSE_CORE_0);
+
+    gpio_init(GPIO_PAUSE_CORE_1);
+    gpio_set_dir(GPIO_PAUSE_CORE_1, GPIO_IN);
+    gpio_pull_up(GPIO_PAUSE_CORE_1);
+
     // set up increments for calculating bow envelope
     attack_inc = divfix(max_amplitude, int2fix15(ATTACK_TIME));
     decay_inc = divfix(max_amplitude, int2fix15(DECAY_TIME));
@@ -401,7 +451,7 @@ int main()
     PT_SEM_SAFE_INIT(&core_1_go, 0);
 
     // Launch core 1
-    multicore_launch_core1(core1_entry);
+    // multicore_launch_core1(core1_entry);
 
     // Desynchronize the beeps
     sleep_ms(500);
