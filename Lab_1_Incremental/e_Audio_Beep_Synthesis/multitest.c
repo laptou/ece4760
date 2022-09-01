@@ -101,6 +101,7 @@ volatile unsigned int STATE_CORE_0_PAUSE_COUNTER = 0;
 volatile state_t STATE_CORE_1 = state_wait_for_syllable;
 volatile unsigned int STATE_CORE_1_IRQ_COUNTER = 0;
 volatile unsigned int STATE_CORE_1_SYLLABLE_COUNTER = 0;
+volatile unsigned int STATE_CORE_1_PAUSE_COUNTER = 0;
 
 // SPI data
 uint16_t DAC_data_1; // output value
@@ -138,6 +139,43 @@ struct pt_sem core_1_go, core_0_go;
 bool repeating_timer_callback_core_1(struct repeating_timer *t)
 {
     STATE_CORE_1_IRQ_COUNTER++;
+
+    if (STATE_CORE_1 != state_paused)
+    {
+        if (!gpio_get(GPIO_PAUSE_CORE_1))
+        {
+            STATE_CORE_1_PAUSE_COUNTER++;
+
+            if (STATE_CORE_1_PAUSE_COUNTER >= 20000)
+            {
+                STATE_CORE_1 = state_paused;
+                STATE_CORE_1_IRQ_COUNTER = 0;
+                STATE_CORE_1_PAUSE_COUNTER = 0;
+            }
+        }
+        else
+        {
+            STATE_CORE_1_PAUSE_COUNTER = 0;
+        }
+    }
+    else
+    {
+        if (!gpio_get(GPIO_PAUSE_CORE_1))
+        {
+            STATE_CORE_1_PAUSE_COUNTER++;
+
+            if (STATE_CORE_1_PAUSE_COUNTER >= 20000)
+            {
+                STATE_CORE_1 = state_wait_for_chirp;
+                STATE_CORE_1_IRQ_COUNTER = 0;
+                STATE_CORE_1_PAUSE_COUNTER = 0;
+            }
+        }
+        else
+        {
+            STATE_CORE_1_PAUSE_COUNTER = 0;
+        }
+    }
 
     switch (STATE_CORE_1)
     {
@@ -451,7 +489,7 @@ int main()
     PT_SEM_SAFE_INIT(&core_1_go, 0);
 
     // Launch core 1
-    // multicore_launch_core1(core1_entry);
+    multicore_launch_core1(core1_entry);
 
     // Desynchronize the beeps
     sleep_ms(500);
