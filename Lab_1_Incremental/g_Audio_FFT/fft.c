@@ -48,15 +48,7 @@
 // Define the LED pin
 #define LED 25
 
-// === the fixed point macros (16.15) ========================================
-typedef signed int fix15;
-#define multfix15(a, b) ((fix15)((((signed long long)(a)) * ((signed long long)(b))) >> 15))
-#define float2fix15(a) ((fix15)((a)*32768.0)) // 2^15
-#define fix2float15(a) ((float)(a) / 32768.0)
-#define absfix15(a) abs(a)
-#define int2fix15(a) ((fix15)(a << 15))
-#define fix2int15(a) ((int)(a >> 15))
-#define char2fix15(a) (fix15)(((fix15)(a)) << 15)
+#pragma region Fixed point math
 
 // Macros for fixed-point arithmetic (faster than floating point)
 typedef signed int fix15;
@@ -68,6 +60,8 @@ typedef signed int fix15;
 #define fix2int15(a) ((int)(a >> 15))
 #define char2fix15(a) (fix15)(((fix15)(a)) << 15)
 #define divfix(a, b) (fix15)((((signed long long)(a)) << 15) / (b))
+
+#pragma endregion
 
 // Direct Digital Synthesis (DDS) parameters
 #define two32 4294967296.0 // 2^32 (a constant)
@@ -101,17 +95,19 @@ fix15 decay_inc;                    // rate at which sound ramps down
 fix15 current_amplitude_0 = 0;      // current amplitude (modified in ISR)
 fix15 current_amplitude_1 = 0;      // current amplitude (modified in ISR)
 
+// period of timer interrupt in us
+#define IRQ_PERIOD 25
+
 // Timing parameters for beeps (units of interrupts)
 #define CHIRP_ATTACK_TIME 200
 #define CHIRP_DECAY_TIME 200
 #define CHIRP_SUSTAIN_TIME 10000
-// #define BEEP_DURATION 10400
-// #define BEEP_REPEAT_INTERVAL 40000
 
-// space in between chirps and syllables in interrupts
-#define SYLLABLE_SPACE 80
-#define CHIRP_SPACE 10400
-#define SYLLABLE_LENGTH 680
+// space in between chirps and syllables
+const int CHIRP_SPACE = 260000 / IRQ_PERIOD;
+const int SYLLABLE_SPACE = 2000 / IRQ_PERIOD;
+const int SYLLABLE_LENGTH = 17000 / IRQ_PERIOD;
+
 typedef enum emit_state
 {
     es_wait_for_syllable,
@@ -120,13 +116,21 @@ typedef enum emit_state
     es_paused,
 } emit_state_t;
 
+// lookup table used for the integration counter function
+#define CHIRP_ACCUM_THRESHOLD int2fix15(31)
+#define CHIRP_ACCUM_EPSILON 4
+#define CHIRP_ACCUM_LUT_SIZE 1024
+fix15 CHIRP_ACCUM_LUT[CHIRP_ACCUM_LUT_SIZE];
+
 // State machine variables
-volatile emit_state_t es_core_0 = es_wait_for_syllable;
-volatile unsigned int es_core_0_irq_count = 0;
+volatile emit_state_t es_core_0 = es_wait_for_chirp;
+// accumulator that triggers a chirp when its value reaches CHIRP_ACCUM_THRESHOLD
+volatile unsigned int es_core_0_chirp_time = 0;
+volatile unsigned int es_core_0_irq_time = 0;
 volatile unsigned int es_core_0_syllable_count = 0;
 volatile unsigned int es_core_0_pause_count = 0;
 
-volatile emit_state_t es_core_1 = es_wait_for_syllable;
+volatile emit_state_t es_core_1 = es_wait_for_chirp;
 volatile unsigned int es_core_1_irq_count = 0;
 volatile unsigned int es_core_1_syllable_count = 0;
 volatile unsigned int es_core_1_pause_count = 0;
@@ -276,7 +280,7 @@ bool repeating_timer_callback_core_1(struct repeating_timer *t)
 // This timer ISR is called on core 0
 bool repeating_timer_callback_core_0(struct repeating_timer *t)
 {
-    es_core_0_irq_count++;
+    es_core_0_irq_time++;
 
     if (es_core_0 != es_paused)
     {
@@ -287,7 +291,7 @@ bool repeating_timer_callback_core_0(struct repeating_timer *t)
             if (es_core_0_pause_count >= 20000)
             {
                 es_core_0 = es_paused;
-                es_core_0_irq_count = 0;
+                es_core_0_irq_time = 0;
                 es_core_0_pause_count = 0;
             }
         }
@@ -305,7 +309,7 @@ bool repeating_timer_callback_core_0(struct repeating_timer *t)
             if (es_core_0_pause_count >= 20000)
             {
                 es_core_0 = es_wait_for_chirp;
-                es_core_0_irq_count = 0;
+                es_core_0_irq_time = 0;
                 es_core_0_pause_count = 0;
             }
         }
@@ -325,13 +329,13 @@ bool repeating_timer_callback_core_0(struct repeating_timer *t)
                        2048;
 
         // Ramp up amplitude
-        if (es_core_0_irq_count < CHIRP_ATTACK_TIME)
+        if (es_core_0_irq_time < CHIRP_ATTACK_TIME)
         {
             current_amplitude_0 = (current_amplitude_0 + attack_inc);
         }
 
         // Ramp down amplitude
-        else if (es_core_0_irq_count > SYLLABLE_LENGTH - CHIRP_DECAY_TIME)
+        else if (es_core_0_irq_time > SYLLABLE_LENGTH - CHIRP_DECAY_TIME)
         {
             current_amplitude_0 = (current_amplitude_0 - decay_inc);
         }
@@ -343,7 +347,7 @@ bool repeating_timer_callback_core_0(struct repeating_timer *t)
         spi_write16_blocking(SPI_PORT, &DAC_data_0, 1);
 
         // State transition
-        if (es_core_0_irq_count >= SYLLABLE_LENGTH)
+        if (es_core_0_irq_time >= SYLLABLE_LENGTH)
         {
             if (es_core_0_syllable_count >= 8)
             {
@@ -356,23 +360,50 @@ bool repeating_timer_callback_core_0(struct repeating_timer *t)
                 es_core_0_syllable_count++;
             }
 
-            es_core_0_irq_count = 0;
+            es_core_0_irq_time = 0;
         }
         break;
     case es_wait_for_chirp:
-        if (es_core_0_irq_count >= CHIRP_SPACE)
+        es_core_0_chirp_time++;
+
+        // calculate current index into chirp accumulator as
+        // (time since last chirp) / (time between chirps) * (length of lookup table)
+        size_t chirp_accum_index = fix2int15(
+            multfix15(
+                divfix(
+                    int2fix15(es_core_0_chirp_time), 
+                    int2fix15(CHIRP_SPACE)
+                ), 
+                int2fix15(CHIRP_ACCUM_LUT_SIZE)
+            )
+        );
+        
+        if (chirp_accum_index >= CHIRP_ACCUM_LUT_SIZE)
         {
+            chirp_accum_index = CHIRP_ACCUM_LUT_SIZE - 1;
+        }
+
+        fix15 chirp_accum = CHIRP_ACCUM_LUT[chirp_accum_index];
+
+        // printf("waiting for chirp (time = %d, idx = %d, accum = %f)", es_core_0_chirp_time, chirp_accum_index, fix2float15(chirp_accum));
+
+        if (chirp_accum >= CHIRP_ACCUM_THRESHOLD)
+        {
+            // printf("broke chirp thresh\n");
             current_amplitude_0 = 0;
             es_core_0 = es_active;
-            es_core_0_irq_count = 0;
+            es_core_0_irq_time = 0;
+            es_core_0_chirp_time = 0;
         }
+
+        // stdio_flush();
         break;
     case es_wait_for_syllable:
-        if (es_core_0_irq_count >= SYLLABLE_SPACE)
+        if (es_core_0_irq_time >= SYLLABLE_SPACE)
         {
             current_amplitude_0 = 0;
             es_core_0 = es_active;
-            es_core_0_irq_count = 0;
+            es_core_0_irq_time = 0;
         }
         break;
     }
@@ -693,7 +724,7 @@ static PT_THREAD(protothread_fft(struct pt *pt))
         switch (listen_state)
         {
         case ls_wait:
-            if (abs(max_freqency - 2300) < 50 && listen_state_duration > 25)
+            if (abs(max_freqency - 2300) < 50)
             {
                 listen_state = ls_active;
                 ls_last_time = now;
@@ -703,16 +734,36 @@ static PT_THREAD(protothread_fft(struct pt *pt))
 
                 if (core_0_chirping)
                 {
+                    printf("chirp detected from core 0\n");
                     ls_chirp_count_core_0++;
                 }
 
                 if (core_1_chirping)
                 {
+                    printf("chirp detected from core 1\n");
                     ls_chirp_count_core_1++;
                 }
 
                 if (!(core_0_chirping || core_1_chirping))
                 {
+                    fix15 es_core_0_chirp_accum = CHIRP_ACCUM_LUT[es_core_0_chirp_time];
+                    es_core_0_chirp_accum += CHIRP_ACCUM_EPSILON;
+
+                    printf("external chirp detected, accum (pre epsilon) = %f, time = %d", fix2float15(es_core_0_chirp_accum), es_core_0_chirp_time);
+
+                    while (CHIRP_ACCUM_LUT[es_core_0_chirp_time] < es_core_0_chirp_accum)
+                    {
+                        es_core_0_chirp_time++;
+
+                        if (es_core_0_chirp_time >= CHIRP_ACCUM_LUT_SIZE)
+                        {
+                            es_core_0_chirp_time = 0;
+                            break;
+                        }
+                    }
+
+                    printf("external chirp detected, accum (post epsilon) = %f, time = %d", fix2float15(es_core_0_chirp_accum), es_core_0_chirp_time);
+
                     ls_chirp_count_external++;
                 }
             }
@@ -727,7 +778,7 @@ static PT_THREAD(protothread_fft(struct pt *pt))
             {
                 listen_state = ls_wait;
                 ls_last_time = now;
-                puts("chirp!");
+                puts("chirp detected\n");
             }
             break;
         }
@@ -784,22 +835,34 @@ bool now_timer_callback(repeating_timer_t *_)
 // Core 0 entry point
 int main()
 {
+
     // Initialize stdio
     stdio_init_all();
+    printf("\n");
 
     // Initialize the VGA screen
     initVGA();
 
     // initialize now timer
-    struct repeating_timer now_timer;
-    add_repeating_timer_ms(NOW_TIMESTEP, now_timer_callback, NULL, &now_timer);
+    static struct repeating_timer now_timer;
+    add_repeating_timer_ms(-NOW_TIMESTEP, now_timer_callback, NULL, &now_timer);
 
     // Map LED to GPIO port, make it low
     gpio_init(LED);
     gpio_set_dir(LED, GPIO_OUT);
     gpio_put(LED, 0);
 
+    for (size_t i = 0; i < CHIRP_ACCUM_LUT_SIZE; i++)
+    {
+        CHIRP_ACCUM_LUT[i] = float2fix15(sqrt((float)i));
+    }
+
+    printf("initialized lut, %d, %d\n", CHIRP_ACCUM_LUT[0], CHIRP_ACCUM_LUT[CHIRP_ACCUM_LUT_SIZE - 1]);
+
 #pragma region ADC config
+
+    printf("initializing adc\n");
+
     // Init GPIO for analogue use: hi-Z, no pulls, disable digital input buffer.
     adc_gpio_init(ADC_PIN);
 
@@ -838,6 +901,8 @@ int main()
 #pragma endregion
 
 #pragma region ADC DMA config
+    printf("initializing adc dma\n");
+
     // Channel configurations
     dma_channel_config c2 = dma_channel_get_default_config(sample_chan);
     dma_channel_config c3 = dma_channel_get_default_config(control_chan);
@@ -876,6 +941,8 @@ int main()
 #pragma endregion
 
 #pragma region DAC config
+    printf("initializing dac\n");
+
     // Initialize SPI channel (channel, baud rate set to 20MHz)
     spi_init(SPI_PORT, 20000000);
     // Format (channel, data bits per transfer, polarity, phase, order)
@@ -909,6 +976,8 @@ int main()
 #pragma endregion
 
 #pragma region Pause button config
+    printf("initializing pause button\n");
+
     gpio_init(GPIO_PAUSE_CORE_0);
     gpio_set_dir(GPIO_PAUSE_CORE_0, GPIO_IN);
     gpio_pull_up(GPIO_PAUSE_CORE_0);
@@ -918,27 +987,34 @@ int main()
     gpio_pull_up(GPIO_PAUSE_CORE_1);
 #pragma endregion
 
+    printf("initializing core 0 interrupt\n");
+
     // Create a repeating timer that calls
     // repeating_timer_callback (defaults core 0)
-    struct repeating_timer timer_core_0;
+    static struct repeating_timer timer_core_0;
 
     // Negative delay so means we will call repeating_timer_callback, and call it
     // again 25us (40kHz) later regardless of how long the callback took to execute
-    add_repeating_timer_us(-25,
+    add_repeating_timer_us(-IRQ_PERIOD,
                            repeating_timer_callback_core_0, NULL, &timer_core_0);
+
+    printf("f\n");
 
     // Desynchronize the beeps
     sleep_ms(500);
 
+    printf("adding protothreads\n");
+
     // Launch core 1
-    multicore_launch_core1(core1_entry);
+    // multicore_launch_core1(core1_entry);
 
     // Add and schedule core 0 threads
     pt_add_thread(protothread_fft);
-    pt_schedule_start;
 
     // Add core 0 threads
     pt_add_thread(protothread_core_0);
+
+    printf("initializing core 0 thread scheduler\n");
 
     // Start scheduling core 0 threads
     pt_schedule_start;
