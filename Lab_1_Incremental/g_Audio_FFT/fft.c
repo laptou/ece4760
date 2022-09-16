@@ -38,6 +38,7 @@
 #include "hardware/dma.h"
 #include "hardware/adc.h"
 #include "hardware/irq.h"
+#include "hardware/sync.h"
 // Include protothreads
 #include "pt_cornell_rp2040_v1.h"
 
@@ -60,6 +61,10 @@ typedef signed int fix15;
 #define fix2int15(a) ((int)(a >> 15))
 #define char2fix15(a) (fix15)(((fix15)(a)) << 15)
 #define divfix(a, b) (fix15)((((signed long long)(a)) << 15) / (b))
+
+// Max and min macros
+#define max(a, b) ((a > b) ? a : b)
+#define min(a, b) ((a < b) ? a : b)
 
 #pragma endregion
 
@@ -104,9 +109,10 @@ fix15 current_amplitude_1 = 0;      // current amplitude (modified in ISR)
 #define CHIRP_SUSTAIN_TIME 10000
 
 // space in between chirps and syllables
-const int CHIRP_SPACE = 260000 / IRQ_PERIOD;
+const int CHIRP_SPACE = 1000000 / IRQ_PERIOD;
 const int SYLLABLE_SPACE = 2000 / IRQ_PERIOD;
 const int SYLLABLE_LENGTH = 17000 / IRQ_PERIOD;
+const int SYLLABLE_COUNT = 8;
 
 typedef enum emit_state
 {
@@ -118,7 +124,7 @@ typedef enum emit_state
 
 // lookup table used for the integration counter function
 #define CHIRP_ACCUM_THRESHOLD int2fix15(31)
-#define CHIRP_ACCUM_EPSILON 4
+const fix15 CHIRP_ACCUM_EPSILON = float2fix15(2.5);
 #define CHIRP_ACCUM_LUT_SIZE 1024
 fix15 CHIRP_ACCUM_LUT[CHIRP_ACCUM_LUT_SIZE];
 
@@ -126,14 +132,17 @@ fix15 CHIRP_ACCUM_LUT[CHIRP_ACCUM_LUT_SIZE];
 volatile emit_state_t es_core_0 = es_wait_for_chirp;
 // accumulator that triggers a chirp when its value reaches CHIRP_ACCUM_THRESHOLD
 volatile unsigned int es_core_0_chirp_time = 0;
-volatile unsigned int es_core_0_irq_time = 0;
+volatile unsigned int es_core_0_irq_count = 0;
 volatile unsigned int es_core_0_syllable_count = 0;
 volatile unsigned int es_core_0_pause_count = 0;
 
 volatile emit_state_t es_core_1 = es_wait_for_chirp;
+volatile unsigned int es_core_1_chirp_time = 0;
 volatile unsigned int es_core_1_irq_count = 0;
 volatile unsigned int es_core_1_syllable_count = 0;
 volatile unsigned int es_core_1_pause_count = 0;
+
+spin_lock_t *es_spin_lock;
 
 // SPI data
 uint16_t DAC_data_1; // output value
@@ -166,6 +175,32 @@ volatile int global_counter = 0;
 
 // Semaphore
 struct pt_sem core_1_go, core_0_go;
+
+size_t chirp_time_to_lut_index(unsigned int chirp_time)
+{
+    // (lut idx) = (time since last chirp) / (time between chirps) * (length of lut)
+    size_t lut_idx = fix2int15(
+        multfix15(
+            divfix(
+                int2fix15(chirp_time),
+                int2fix15(CHIRP_SPACE)),
+            int2fix15(CHIRP_ACCUM_LUT_SIZE)));
+
+    return min(lut_idx, CHIRP_ACCUM_LUT_SIZE - 1);
+}
+
+size_t lut_index_to_chirp_time(size_t lut_idx)
+{
+    // (time since last chirp) = (lut idx) / (length of lut)  * (time between chirps)
+    unsigned int chirp_time = fix2int15(
+        multfix15(
+            divfix(
+                int2fix15(lut_idx),
+                int2fix15(CHIRP_ACCUM_LUT_SIZE)),
+            int2fix15(CHIRP_SPACE)));
+
+    return chirp_time;
+}
 
 // This timer ISR is called on core 1
 bool repeating_timer_callback_core_1(struct repeating_timer *t)
@@ -239,7 +274,7 @@ bool repeating_timer_callback_core_1(struct repeating_timer *t)
         // State transition
         if (es_core_1_irq_count == SYLLABLE_LENGTH)
         {
-            if (es_core_1_syllable_count >= 8)
+            if (es_core_1_syllable_count >= SYLLABLE_COUNT)
             {
                 es_core_1 = es_wait_for_chirp;
                 es_core_1_syllable_count = 0;
@@ -254,11 +289,24 @@ bool repeating_timer_callback_core_1(struct repeating_timer *t)
         }
         break;
     case es_wait_for_chirp:
-        if (es_core_1_irq_count >= CHIRP_SPACE)
+        uint32_t irq = spin_lock_blocking(es_spin_lock);
+        es_core_1_chirp_time++;
+        spin_unlock(es_spin_lock, irq);
+
+        // calculate current index into chirp accumulator as
+        // (time since last chirp) / (time between chirps) * (length of lookup table)
+        size_t chirp_accum_idx = chirp_time_to_lut_index(es_core_1_chirp_time);
+        fix15 chirp_accum = CHIRP_ACCUM_LUT[chirp_accum_idx];
+
+        // printf("waiting for chirp (time = %d, idx = %d, accum = %f)", es_core_1_chirp_time, chirp_accum_idx, fix2float15(chirp_accum));
+
+        if (chirp_accum >= CHIRP_ACCUM_THRESHOLD)
         {
+            // printf("broke chirp thresh\n");
             current_amplitude_1 = 0;
             es_core_1 = es_active;
             es_core_1_irq_count = 0;
+            es_core_1_chirp_time = 0;
         }
         break;
     case es_wait_for_syllable:
@@ -280,7 +328,7 @@ bool repeating_timer_callback_core_1(struct repeating_timer *t)
 // This timer ISR is called on core 0
 bool repeating_timer_callback_core_0(struct repeating_timer *t)
 {
-    es_core_0_irq_time++;
+    es_core_0_irq_count++;
 
     if (es_core_0 != es_paused)
     {
@@ -291,7 +339,7 @@ bool repeating_timer_callback_core_0(struct repeating_timer *t)
             if (es_core_0_pause_count >= 20000)
             {
                 es_core_0 = es_paused;
-                es_core_0_irq_time = 0;
+                es_core_0_irq_count = 0;
                 es_core_0_pause_count = 0;
             }
         }
@@ -309,7 +357,7 @@ bool repeating_timer_callback_core_0(struct repeating_timer *t)
             if (es_core_0_pause_count >= 20000)
             {
                 es_core_0 = es_wait_for_chirp;
-                es_core_0_irq_time = 0;
+                es_core_0_irq_count = 0;
                 es_core_0_pause_count = 0;
             }
         }
@@ -329,13 +377,13 @@ bool repeating_timer_callback_core_0(struct repeating_timer *t)
                        2048;
 
         // Ramp up amplitude
-        if (es_core_0_irq_time < CHIRP_ATTACK_TIME)
+        if (es_core_0_irq_count < CHIRP_ATTACK_TIME)
         {
             current_amplitude_0 = (current_amplitude_0 + attack_inc);
         }
 
         // Ramp down amplitude
-        else if (es_core_0_irq_time > SYLLABLE_LENGTH - CHIRP_DECAY_TIME)
+        else if (es_core_0_irq_count > SYLLABLE_LENGTH - CHIRP_DECAY_TIME)
         {
             current_amplitude_0 = (current_amplitude_0 - decay_inc);
         }
@@ -347,9 +395,9 @@ bool repeating_timer_callback_core_0(struct repeating_timer *t)
         spi_write16_blocking(SPI_PORT, &DAC_data_0, 1);
 
         // State transition
-        if (es_core_0_irq_time >= SYLLABLE_LENGTH)
+        if (es_core_0_irq_count >= SYLLABLE_LENGTH)
         {
-            if (es_core_0_syllable_count >= 8)
+            if (es_core_0_syllable_count >= SYLLABLE_COUNT)
             {
                 es_core_0 = es_wait_for_chirp;
                 es_core_0_syllable_count = 0;
@@ -360,47 +408,38 @@ bool repeating_timer_callback_core_0(struct repeating_timer *t)
                 es_core_0_syllable_count++;
             }
 
-            es_core_0_irq_time = 0;
+            es_core_0_irq_count = 0;
         }
         break;
     case es_wait_for_chirp:
+        uint32_t irq = spin_lock_blocking(es_spin_lock);
         es_core_0_chirp_time++;
+        spin_unlock(es_spin_lock, irq);
 
         // calculate current index into chirp accumulator as
         // (time since last chirp) / (time between chirps) * (length of lookup table)
-        size_t chirp_accum_index = fix2int15(
-            multfix15(
-                divfix(
-                    int2fix15(es_core_0_chirp_time),
-                    int2fix15(CHIRP_SPACE)),
-                int2fix15(CHIRP_ACCUM_LUT_SIZE)));
+        size_t chirp_accum_idx = chirp_time_to_lut_index(es_core_0_chirp_time);
+        fix15 chirp_accum = CHIRP_ACCUM_LUT[chirp_accum_idx];
 
-        if (chirp_accum_index >= CHIRP_ACCUM_LUT_SIZE)
-        {
-            chirp_accum_index = CHIRP_ACCUM_LUT_SIZE - 1;
-        }
-
-        fix15 chirp_accum = CHIRP_ACCUM_LUT[chirp_accum_index];
-
-        // printf("waiting for chirp (time = %d, idx = %d, accum = %f)", es_core_0_chirp_time, chirp_accum_index, fix2float15(chirp_accum));
+        // printf("waiting for chirp (time = %d, idx = %d, accum = %f)", es_core_0_chirp_time, chirp_accum_idx, fix2float15(chirp_accum));
 
         if (chirp_accum >= CHIRP_ACCUM_THRESHOLD)
         {
             // printf("broke chirp thresh\n");
             current_amplitude_0 = 0;
             es_core_0 = es_active;
-            es_core_0_irq_time = 0;
+            es_core_0_irq_count = 0;
             es_core_0_chirp_time = 0;
         }
 
         // stdio_flush();
         break;
     case es_wait_for_syllable:
-        if (es_core_0_irq_time >= SYLLABLE_SPACE)
+        if (es_core_0_irq_count >= SYLLABLE_SPACE)
         {
             current_amplitude_0 = 0;
             es_core_0 = es_active;
-            es_core_0_irq_time = 0;
+            es_core_0_irq_count = 0;
         }
         break;
     }
@@ -483,10 +522,6 @@ static PT_THREAD(protothread_core_0(struct pt *pt))
 // DMA channels for sampling ADC (VGA driver uses 0 and 1)
 int sample_chan = 2;
 int control_chan = 3;
-
-// Max and min macros
-#define max(a, b) ((a > b) ? a : b)
-#define min(a, b) ((a < b) ? a : b)
 
 // 0.4 in fixed point (used for alpha max plus beta min)
 fix15 zero_point_4 = float2fix15(0.4);
@@ -675,6 +710,7 @@ static PT_THREAD(protothread_fft(struct pt *pt))
         dma_channel_wait_for_finish_blocking(sample_chan);
 
         ls_es_core_0_after = es_core_0;
+        ls_es_core_1_after = es_core_1;
 
         // Copy/window elements into a fixed-point array
         for (i = 0; i < NUM_SAMPLES; i++)
@@ -718,21 +754,21 @@ static PT_THREAD(protothread_fft(struct pt *pt))
         max_freqency = max_fr_dex * (ADC_Fs / NUM_SAMPLES);
 
         // Display on VGA
-        fillRect(250, 20, 176, 20, BLACK); // red box
-        sprintf(freqtext, "%d", (int)max_freqency);
-        setCursor(250, 20);
-        setTextSize(2);
-        writeString(freqtext);
+        // fillRect(250, 20, 176, 20, BLACK); // red box
+        // sprintf(freqtext, "%d", (int)max_freqency);
+        // setCursor(250, 20);
+        // setTextSize(2);
+        // writeString(freqtext);
 
-        // Update the FFT display
-        for (int i = 5; i < (NUM_SAMPLES >> 1); i++)
-        {
-            drawVLine(59 + i, 100, 379, BLACK);
-            height = fix2int15(multfix15(fr[i], int2fix15(36)));
-            drawVLine(59 + i, 479 - height, height, WHITE);
-        }
+        // // Update the FFT display
+        // for (int i = 5; i < (NUM_SAMPLES >> 1); i++)
+        // {
+        //     drawVLine(59 + i, 100, 379, BLACK);
+        //     height = fix2int15(multfix15(fr[i], int2fix15(36)));
+        //     drawVLine(59 + i, 479 - height, height, WHITE);
+        // }
 
-        fillRect(250, 60, 350, 40, RED);
+        // fillRect(250, 60, 350, 40, RED);
 
         unsigned int listen_state_duration = ls_last_time - now;
         switch (listen_state)
@@ -743,30 +779,64 @@ static PT_THREAD(protothread_fft(struct pt *pt))
                 listen_state = ls_active;
                 ls_last_time = now;
 
-                bool core_0_silent = (ls_es_core_0_before == es_wait_for_chirp) && (ls_es_core_0_after == es_wait_for_chirp);
-                bool core_1_silent = (ls_es_core_1_before == es_wait_for_chirp) && (ls_es_core_1_after == es_wait_for_chirp);
+                bool core_0_silent = (ls_es_core_0_before == es_wait_for_chirp || ls_es_core_0_before == es_paused) && (ls_es_core_0_after == es_wait_for_chirp || ls_es_core_0_after == es_paused);
+                bool core_1_silent = (ls_es_core_1_before == es_wait_for_chirp || ls_es_core_1_before == es_paused) && (ls_es_core_1_after == es_wait_for_chirp || ls_es_core_1_after == es_paused);
 
                 if (core_0_silent)
                 {
-                    fix15 es_core_0_chirp_accum = CHIRP_ACCUM_LUT[es_core_0_chirp_time];
+                    gpio_put(21, true);
+
+                    size_t lut_idx = chirp_time_to_lut_index(es_core_0_chirp_time);
+                    fix15 es_core_0_chirp_accum = CHIRP_ACCUM_LUT[lut_idx];
+
+                    // printf("non core 0 chirp detected, accum (pre epsilon) = %f, time = %d, lut idx = %d\n", fix2float15(es_core_0_chirp_accum), es_core_0_chirp_time, lut_idx);
+
                     es_core_0_chirp_accum += CHIRP_ACCUM_EPSILON;
 
-                    printf("external chirp detected, accum (pre epsilon) = %f, time = %d\n", fix2float15(es_core_0_chirp_accum), es_core_0_chirp_time);
-
-                    while (CHIRP_ACCUM_LUT[es_core_0_chirp_time] < es_core_0_chirp_accum)
+                    while (CHIRP_ACCUM_LUT[lut_idx] < es_core_0_chirp_accum)
                     {
-                        es_core_0_chirp_time++;
+                        lut_idx++;
 
-                        if (es_core_0_chirp_time >= CHIRP_ACCUM_LUT_SIZE)
+                        if (lut_idx >= CHIRP_ACCUM_LUT_SIZE)
                         {
-                            es_core_0_chirp_time = 0;
+                            lut_idx = 0;
                             break;
                         }
                     }
 
-                    printf("external chirp detected, accum (post epsilon) = %f, time = %d\n", fix2float15(es_core_0_chirp_accum), es_core_0_chirp_time);
+                    uint32_t irq = spin_lock_blocking(es_spin_lock);
+                    es_core_0_chirp_time = lut_index_to_chirp_time(lut_idx);
+                    spin_unlock(es_spin_lock, irq);
+                    // printf("non core 0 chirp detected, accum (post epsilon) = %f, time = %d, lut idx = %d\n", fix2float15(es_core_0_chirp_accum), es_core_0_chirp_time, lut_idx);
+                }
 
-                    ls_chirp_count_external++;
+                if (core_1_silent)
+                {
+                    gpio_put(22, true);
+
+                    size_t lut_idx = chirp_time_to_lut_index(es_core_1_chirp_time);
+                    fix15 es_core_1_chirp_accum = CHIRP_ACCUM_LUT[lut_idx];
+
+                    // printf("non core 1 chirp detected, accum (pre epsilon) = %f, time = %d, lut idx = %d\n", fix2float15(es_core_1_chirp_accum), es_core_1_chirp_time, lut_idx);
+
+                    es_core_1_chirp_accum += CHIRP_ACCUM_EPSILON;
+
+                    while (CHIRP_ACCUM_LUT[lut_idx] < es_core_1_chirp_accum)
+                    {
+                        lut_idx++;
+
+                        if (lut_idx >= CHIRP_ACCUM_LUT_SIZE)
+                        {
+                            lut_idx = 0;
+                            break;
+                        }
+                    }
+
+                    uint32_t irq = spin_lock_blocking(es_spin_lock);
+                    es_core_1_chirp_time = lut_index_to_chirp_time(lut_idx);
+                    spin_unlock(es_spin_lock, irq);
+
+                    // printf("non core 1 chirp detected, accum (post epsilon) = %f, time = %d, lut idx = %d\n", fix2float15(es_core_1_chirp_accum), es_core_1_chirp_time, lut_idx);
                 }
             }
             break;
@@ -776,17 +846,21 @@ static PT_THREAD(protothread_fft(struct pt *pt))
             sprintf(chirptext, "chirp detected");
             writeString(chirptext);
 
-            if (abs(max_freqency - 2300) > 50 && listen_state_duration > 100)
+            if (abs(max_freqency - 2300) > 50)
             {
+                gpio_put(21, false);
+                gpio_put(22, false);
+
                 listen_state = ls_wait;
                 ls_last_time = now;
-                puts("chirp detected\n");
+                // puts("chirp detected\n");
             }
             break;
         }
-        sprintf(chirptext, "ext %d c0 %d c1 %d ls %d now %d", ls_chirp_count_external, ls_chirp_count_core_0, ls_chirp_count_core_1, listen_state, now);
-        setCursor(250, 60);
-        writeString(chirptext);
+
+        // sprintf(chirptext, "ext %d c0 %d c1 %d ls %d now %d", ls_chirp_count_external, ls_chirp_count_core_0, ls_chirp_count_core_1, listen_state, now);
+        // setCursor(250, 60);
+        // writeString(chirptext);
 
         ls_es_core_0_before = ls_es_core_0_next;
         ls_es_core_1_before = ls_es_core_1_next;
@@ -840,7 +914,6 @@ bool now_timer_callback(repeating_timer_t *_)
 // Core 0 entry point
 int main()
 {
-
     // Initialize stdio
     stdio_init_all();
     printf("\n");
@@ -856,6 +929,15 @@ int main()
     gpio_init(LED);
     gpio_set_dir(LED, GPIO_OUT);
     gpio_put(LED, 0);
+
+    gpio_init(21);
+    gpio_init(22);
+    gpio_set_dir(21, GPIO_OUT);
+    gpio_set_dir(22, GPIO_OUT);
+    gpio_put(21, false);
+    gpio_put(22, false);
+
+    es_spin_lock = spin_lock_init(0);
 
     for (size_t i = 0; i < CHIRP_ACCUM_LUT_SIZE; i++)
     {
@@ -1006,7 +1088,7 @@ int main()
     printf("f\n");
 
     // Desynchronize the beeps
-    sleep_ms(500);
+    sleep_ms(750);
 
     printf("adding protothreads\n");
 
