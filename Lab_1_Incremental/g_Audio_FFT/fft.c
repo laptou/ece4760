@@ -371,13 +371,10 @@ bool repeating_timer_callback_core_0(struct repeating_timer *t)
         size_t chirp_accum_index = fix2int15(
             multfix15(
                 divfix(
-                    int2fix15(es_core_0_chirp_time), 
-                    int2fix15(CHIRP_SPACE)
-                ), 
-                int2fix15(CHIRP_ACCUM_LUT_SIZE)
-            )
-        );
-        
+                    int2fix15(es_core_0_chirp_time),
+                    int2fix15(CHIRP_SPACE)),
+                int2fix15(CHIRP_ACCUM_LUT_SIZE)));
+
         if (chirp_accum_index >= CHIRP_ACCUM_LUT_SIZE)
         {
             chirp_accum_index = CHIRP_ACCUM_LUT_SIZE - 1;
@@ -618,12 +615,24 @@ volatile unsigned int ls_chirp_count_external = 0;
 volatile unsigned int ls_chirp_count_core_0 = 0;
 volatile unsigned int ls_chirp_count_core_1 = 0;
 
+volatile emit_state_t ls_es_core_0_before;
+volatile emit_state_t ls_es_core_0_after;
+volatile emit_state_t ls_es_core_0_next;
+
+volatile emit_state_t ls_es_core_1_before;
+volatile emit_state_t ls_es_core_1_after;
+volatile emit_state_t ls_es_core_1_next;
+
 // Runs on core 0
 static PT_THREAD(protothread_fft(struct pt *pt))
 {
     // Indicate beginning of thread
     PT_BEGIN(pt);
     printf("Starting capture\n");
+
+    ls_es_core_0_before = es_core_0;
+    ls_es_core_1_before = es_core_1;
+
     // Start the ADC channel
     dma_start_channel_mask((1u << sample_chan));
     // Start the ADC
@@ -665,6 +674,8 @@ static PT_THREAD(protothread_fft(struct pt *pt))
         // Measure wait time with timer. THIS IS BLOCKING
         dma_channel_wait_for_finish_blocking(sample_chan);
 
+        ls_es_core_0_after = es_core_0;
+
         // Copy/window elements into a fixed-point array
         for (i = 0; i < NUM_SAMPLES; i++)
         {
@@ -675,6 +686,9 @@ static PT_THREAD(protothread_fft(struct pt *pt))
         // Zero max frequency and max frequency index
         max_fr = 0;
         max_fr_dex = 0;
+
+        ls_es_core_0_next = es_core_0;
+        ls_es_core_1_next = es_core_1;
 
         // Restart the sample channel, now that we have our copy of the samples
         dma_channel_start(control_chan);
@@ -729,27 +743,15 @@ static PT_THREAD(protothread_fft(struct pt *pt))
                 listen_state = ls_active;
                 ls_last_time = now;
 
-                bool core_0_chirping = es_core_0 == es_active || es_core_0 == es_wait_for_syllable;
-                bool core_1_chirping = es_core_1 == es_active || es_core_1 == es_wait_for_syllable;
+                bool core_0_silent = (ls_es_core_0_before == es_wait_for_chirp) && (ls_es_core_0_after == es_wait_for_chirp);
+                bool core_1_silent = (ls_es_core_1_before == es_wait_for_chirp) && (ls_es_core_1_after == es_wait_for_chirp);
 
-                if (core_0_chirping)
-                {
-                    printf("chirp detected from core 0\n");
-                    ls_chirp_count_core_0++;
-                }
-
-                if (core_1_chirping)
-                {
-                    printf("chirp detected from core 1\n");
-                    ls_chirp_count_core_1++;
-                }
-
-                if (!(core_0_chirping || core_1_chirping))
+                if (core_0_silent)
                 {
                     fix15 es_core_0_chirp_accum = CHIRP_ACCUM_LUT[es_core_0_chirp_time];
                     es_core_0_chirp_accum += CHIRP_ACCUM_EPSILON;
 
-                    printf("external chirp detected, accum (pre epsilon) = %f, time = %d", fix2float15(es_core_0_chirp_accum), es_core_0_chirp_time);
+                    printf("external chirp detected, accum (pre epsilon) = %f, time = %d\n", fix2float15(es_core_0_chirp_accum), es_core_0_chirp_time);
 
                     while (CHIRP_ACCUM_LUT[es_core_0_chirp_time] < es_core_0_chirp_accum)
                     {
@@ -762,7 +764,7 @@ static PT_THREAD(protothread_fft(struct pt *pt))
                         }
                     }
 
-                    printf("external chirp detected, accum (post epsilon) = %f, time = %d", fix2float15(es_core_0_chirp_accum), es_core_0_chirp_time);
+                    printf("external chirp detected, accum (post epsilon) = %f, time = %d\n", fix2float15(es_core_0_chirp_accum), es_core_0_chirp_time);
 
                     ls_chirp_count_external++;
                 }
@@ -785,6 +787,9 @@ static PT_THREAD(protothread_fft(struct pt *pt))
         sprintf(chirptext, "ext %d c0 %d c1 %d ls %d now %d", ls_chirp_count_external, ls_chirp_count_core_0, ls_chirp_count_core_1, listen_state, now);
         setCursor(250, 60);
         writeString(chirptext);
+
+        ls_es_core_0_before = ls_es_core_0_next;
+        ls_es_core_1_before = ls_es_core_1_next;
     }
     PT_END(pt);
 }
@@ -854,7 +859,7 @@ int main()
 
     for (size_t i = 0; i < CHIRP_ACCUM_LUT_SIZE; i++)
     {
-        CHIRP_ACCUM_LUT[i] = float2fix15(sqrt((float)i));
+        CHIRP_ACCUM_LUT[i] = float2fix15(sqrt((float)(i + 1)));
     }
 
     printf("initialized lut, %d, %d\n", CHIRP_ACCUM_LUT[0], CHIRP_ACCUM_LUT[CHIRP_ACCUM_LUT_SIZE - 1]);
@@ -1006,7 +1011,7 @@ int main()
     printf("adding protothreads\n");
 
     // Launch core 1
-    // multicore_launch_core1(core1_entry);
+    multicore_launch_core1(core1_entry);
 
     // Add and schedule core 0 threads
     pt_add_thread(protothread_fft);
