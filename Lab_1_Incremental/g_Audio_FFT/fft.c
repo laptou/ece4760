@@ -450,58 +450,6 @@ bool repeating_timer_callback_core_0(struct repeating_timer *t)
     return true;
 }
 
-// This thread runs on core 1
-static PT_THREAD(protothread_core_1(struct pt *pt))
-{
-    // Indicate thread beginning
-    PT_BEGIN(pt);
-    while (1)
-    {
-        // Wait for signal
-        PT_SEM_SAFE_WAIT(pt, &core_1_go);
-        // Turn off LED
-        gpio_put(LED, 0);
-        // Increment global counter variable
-        for (int i = 0; i < 10; i++)
-        {
-            global_counter += 1;
-            sleep_ms(250);
-            printf("Core 1: %d, ISR core: %d\n", global_counter, corenum_1);
-        }
-        printf("\n\n");
-        // signal other core
-        PT_SEM_SAFE_SIGNAL(pt, &core_0_go);
-    }
-    // Indicate thread end
-    PT_END(pt);
-}
-
-// This thread runs on core 0
-static PT_THREAD(protothread_core_0(struct pt *pt))
-{
-    // Indicate thread beginning
-    PT_BEGIN(pt);
-    while (1)
-    {
-        // Wait for signal
-        PT_SEM_SAFE_WAIT(pt, &core_0_go);
-        // Turn on LED
-        gpio_put(LED, 1);
-        // Increment global counter variable
-        for (int i = 0; i < 10; i++)
-        {
-            global_counter += 1;
-            sleep_ms(250);
-            printf("Core 0: %d, ISR core: %d\n", global_counter, corenum_0);
-        }
-        printf("\n\n");
-        // signal other core
-        PT_SEM_SAFE_SIGNAL(pt, &core_1_go);
-    }
-    // Indicate thread end
-    PT_END(pt);
-}
-
 /////////////////////////// ADC configuration ////////////////////////////////
 // ADC Channel and pin
 #define ADC_CHAN 0
