@@ -62,6 +62,8 @@ typedef struct vec2
   fix15 y;
 } vec2_t;
 
+const vec2_t VEC2_ZERO = {int2fix15(0), int2fix15(0)};
+
 inline vec2_t new_vec2(fix15 x, fix15 y)
 {
   return (vec2_t){.x = x, .y = y};
@@ -70,6 +72,11 @@ inline vec2_t new_vec2(fix15 x, fix15 y)
 inline vec2_t mul_vec2_fix15(fix15 x, vec2_t v)
 {
   return (vec2_t){.x = multfix15(v.x, x), .y = multfix15(v.y, x)};
+}
+
+inline vec2_t div_vec2_fix15(fix15 x, vec2_t v)
+{
+  return (vec2_t){.x = divfix(v.x, x), .y = divfix(v.y, x)};
 }
 
 inline vec2_t mul_vec2_vec2(vec2_t a, vec2_t b)
@@ -90,6 +97,13 @@ inline vec2_t sub_vec2(vec2_t a, vec2_t b)
 inline fix15 dot_vec2(vec2_t a, vec2_t b)
 {
   return multfix15(a.x, b.x) + multfix15(a.y, b.y);
+}
+
+// squared distance between a and b
+inline fix15 dist_sq_vec2(vec2_t a, vec2_t b)
+{
+  vec2_t d = sub_vec2(a, b);
+  return dot_vec2(d, d);
 }
 
 #pragma endregion
@@ -116,14 +130,43 @@ const fix15 WALL_RIGHT = int2fix15(540);
 char color = WHITE;
 #pragma endregion
 
+#pragma region boid parameters
+
+const fix15 BOID_TURN_MARGIN = int2fix15(100);
+const fix15 BOID_TURN_FACTOR = float2fix15(0.2);
+const fix15 BOID_VISUAL_RANGE = float2fix15(40);
+const fix15 BOID_VISUAL_RANGE_SQ = float2fix15(40 * 40);
+const fix15 BOID_PROTECTED_RANGE = float2fix15(8);
+const fix15 BOID_PROTECTED_RANGE_SQ = float2fix15(8 * 8);
+const fix15 BOID_CENTERING_FACTOR = float2fix15(0.0005);
+const fix15 BOID_AVOID_FACTOR = float2fix15(0.05);
+const fix15 BOID_MATCHING_FACTOR = float2fix15(0.05);
+const fix15 BOID_MAX_SPEED = float2fix15(6);
+const fix15 BOID_MIN_SPEED = float2fix15(3);
+const fix15 BOID_MAX_BIAS = float2fix15(0.01);
+const fix15 BOID_BIAS_INCREMENT = float2fix15(0.00004);
+const fix15 BOID_DEFAULT_BIASVAL = float2fix15(0.001);
+
+fix15 close;
+
+#pragma endregion
+
 #pragma region boid state
 typedef struct boid_state
 {
   vec2_t position;
   vec2_t velocity;
+
+  // sum of relative positions of boids within avoid range
+  vec2_t close_neighbor_position;
+
+  // average of velocities of boids within visual range
+  vec2_t visual_neighbor_velocity;
 } boid_state_t;
 
-boid_state_t boids[2];
+#define BOID_COUNT 2
+
+boid_state_t boids[BOID_COUNT];
 #pragma endregion
 
 // Create a boid
@@ -152,23 +195,84 @@ void draw_arena()
   drawHLine(100, 380, 440, WHITE);
 }
 
-// Detect wallstrikes, update velocity and position
-// Delta time should be in seconds
-void update_boid_motion(boid_state_t *boid)
+// updates the motion of boid at index i
+void update_boid_motion(size_t i)
 {
-  // Reverse direction if we've hit a wall
-  if (hitTop(boid->position.y) || hitBottom(boid->position.y))
+  boid_state_t *boid = &boids[i];
+
+#pragma region steer away from walls
+  if (boid->position.x < WALL_LEFT)
   {
-    boid->velocity.y *= -1;
-    boid->position.y = clamp(boid->position.y, WALL_TOP, WALL_BOTTOM);
+    boid->velocity.x += BOID_TURN_FACTOR;
+  }
+  else if (boid->position.x > WALL_RIGHT)
+  {
+    boid->velocity.x -= BOID_TURN_FACTOR;
   }
 
-  if (hitRight(boid->position.x) || hitLeft(boid->position.x))
+  if (boid->position.y < WALL_TOP)
   {
-    boid->velocity.x *= -1;
-    boid->position.x = clamp(boid->position.x, WALL_LEFT, WALL_RIGHT);
+    boid->velocity.y += BOID_TURN_FACTOR;
   }
-  
+  else if (boid->position.y > WALL_BOTTOM)
+  {
+    boid->velocity.y -= BOID_TURN_FACTOR;
+  }
+#pragma endregion
+
+#pragma swarm behaviour
+
+  boid->close_neighbor_position = VEC2_ZERO;
+  boid->visual_neighbor_velocity = VEC2_ZERO;
+
+  size_t close_neighbor_count = 0;
+  size_t visual_neighbor_count = 0;
+
+  // Figure out what neighbouring boids are doing
+  for (size_t j = 0; j < BOID_COUNT; j++)
+  {
+    if (i == j)
+      continue;
+
+    boid_state_t *other = &boids[j];
+
+    fix15 dist_sq = dist_sq_vec2(boid->position, other->position);
+
+    if (dist_sq < BOID_VISUAL_RANGE_SQ)
+    {
+      // other is w/in our visual range
+      visual_neighbor_count++;
+
+      boid->visual_neighbor_velocity = add_vec2(
+          boid->visual_neighbor_velocity,
+          other->velocity);
+    }
+    else
+    {
+      continue;
+    }
+
+    if (dist_sq < BOID_PROTECTED_RANGE_SQ)
+    {
+      // other is w/in our protected range
+      close_neighbor_count++;
+      boid->close_neighbor_position = add_vec2(
+          boid->close_neighbor_position,
+          sub_vec2(boid->position, other->position));
+    }
+    else
+    {
+      continue;
+    }
+  }
+  //boid->velocity = add_vec2(boid->velocity, mul_vec2_fix15(BOID_AVOID_FACTOR, boid->close_neighbor_position));
+
+  // divide sum of neighbour velocities by number of visual neighbours to get
+  // average
+  boid->visual_neighbor_velocity = div_vec2_fix15(int2fix15(visual_neighbor_count), boid->visual_neighbor_velocity);
+
+#pragma endregion
+
   // Update position using velocity
   boid->position = add_vec2(boid->position, boid->velocity);
 }
@@ -243,11 +347,12 @@ void update_animation_thread(animation_thread_state_t *state)
 
   for (size_t i = state->first_boid; i < state->last_boid; i++)
   {
+    close = 0;
     boid_state_t *boid = &boids[i];
     // erase boid
     drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 2, 2, BLACK);
     // update boid's position and velocity
-    update_boid_motion(boid);
+    update_boid_motion(i);
     // draw the boid at its new position
     drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 2, 2, color);
   }
