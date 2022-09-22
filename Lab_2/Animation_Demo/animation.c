@@ -153,24 +153,24 @@ void draw_arena()
 }
 
 // Detect wallstrikes, update velocity and position
-// Delta time should be in milliseconds
-void update_boid_motion(boid_state_t *boid, fix15 delta_time)
+// Delta time should be in seconds
+void update_boid_motion(boid_state_t *boid)
 {
   // Reverse direction if we've hit a wall
   if (hitTop(boid->position.y) || hitBottom(boid->position.y))
   {
     boid->velocity.y *= -1;
-    boid->position.y = clamp(boid->velocity.y, WALL_TOP, WALL_BOTTOM);
+    boid->position.y = clamp(boid->position.y, WALL_TOP, WALL_BOTTOM);
   }
 
-  if (hitRight(boid->position.y) || hitLeft(boid->position.y))
+  if (hitRight(boid->position.x) || hitLeft(boid->position.x))
   {
     boid->velocity.x *= -1;
-    boid->position.x = clamp(boid->velocity.y, WALL_LEFT, WALL_RIGHT);
+    boid->position.x = clamp(boid->position.x, WALL_LEFT, WALL_RIGHT);
   }
   
   // Update position using velocity
-  boid->position = add_vec2(boid->position, mul_vec2_fix15(delta_time, boid->velocity));
+  boid->position = add_vec2(boid->position, boid->velocity);
 }
 
 // ==================================================
@@ -229,7 +229,7 @@ void init_animation_thread(animation_thread_state_t *state)
 {
   for (size_t i = state->first_boid; i < state->last_boid; i++)
   {
-    spawn_boid(&boids[i], 0);
+    spawn_boid(&boids[i], i % 2);
   }
 }
 
@@ -247,7 +247,7 @@ void update_animation_thread(animation_thread_state_t *state)
     // erase boid
     drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 2, 2, BLACK);
     // update boid's position and velocity
-    update_boid_motion(boid, divfix(int2fix15(time_delta), int2fix15(1000)));
+    update_boid_motion(boid);
     // draw the boid at its new position
     drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 2, 2, color);
   }
@@ -321,6 +321,15 @@ int main()
 
   // initialize VGA
   initVGA();
+
+  // initialize animation thread states
+  animation_thread_states[0].core_num = 0;
+  animation_thread_states[0].first_boid = 0;
+  animation_thread_states[0].last_boid = 1;
+
+  animation_thread_states[1].core_num = 1;
+  animation_thread_states[1].first_boid = 1;
+  animation_thread_states[1].last_boid = 2;
 
   // start core 1
   multicore_reset_core1();
