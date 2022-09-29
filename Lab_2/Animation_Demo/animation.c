@@ -56,6 +56,14 @@ typedef signed int fix15;
 #pragma endregion
 static char fpstext[40];
 
+typedef enum wrap
+{
+  wrap_box,
+  wrap_top_bottom,
+  wrap_all
+} wrap_t;
+
+static wrap_t current_wrap = wrap_box;
 #pragma region fixed point vector math
 typedef struct vec2
 {
@@ -142,6 +150,8 @@ const fix15 WALL_TOP = int2fix15(100);
 const fix15 WALL_LEFT = int2fix15(100);
 const fix15 WALL_RIGHT = int2fix15(540);
 
+static int width = 10;
+
 #pragma endregion
 
 #pragma region rendering parameters
@@ -202,10 +212,27 @@ void spawn_boid(boid_state_t *boid, int direction)
 // Draw the boundaries
 void draw_arena()
 {
-  drawVLine(100, 100, 280, WHITE);
-  drawVLine(540, 100, 280, WHITE);
-  drawHLine(100, 100, 440, WHITE);
-  drawHLine(100, 380, 440, WHITE);
+  if (current_wrap == wrap_box)
+  {
+    drawVLine(100, 100, 280, WHITE);
+    drawVLine(540, 100, 280, WHITE);
+    drawHLine(100, 100, 440, WHITE);
+    drawHLine(100, 380, 440, WHITE);
+  }
+  else if (current_wrap == wrap_top_bottom)
+  {
+    drawVLine(100, 100, 280, BLACK);
+    drawVLine(540, 100, 280, BLACK);
+    drawVLine(100, 100, 280, WHITE);
+    drawVLine(540, 100, 280, WHITE);
+  }
+  else
+  {
+    drawVLine(100, 100, 280, BLACK);
+    drawVLine(540, 100, 280, BLACK);
+    drawHLine(100, 100, 440, BLACK);
+    drawHLine(100, 380, 440, BLACK);
+  }
 }
 
 // updates the motion of boid at index i
@@ -337,10 +364,23 @@ static PT_THREAD(protothread_serial(struct pt *pt))
     // convert input string to number
     sscanf(pt_serial_in_buffer, "%d", &user_input);
     // update boid color
-    if ((user_input > 0) && (user_input < 8))
+    // if ((user_input > 1) && (user_input < 30))
+    // {
+    //   width = user_input;
+    // }
+    if (user_input == 1)
     {
-      color = (char)user_input;
+      current_wrap = wrap_box;
     }
+    if (user_input == 2)
+    {
+      current_wrap = wrap_top_bottom;
+    }
+    if (user_input == 3)
+    {
+      current_wrap = wrap_all;
+    }
+
   } // END WHILE(1)
   PT_END(pt);
 } // timer thread
@@ -519,7 +559,7 @@ int main()
   // multicore_launch_core1(&core1_main);
 
   // add threads
-  // pt_add_thread(protothread_serial);
+  pt_add_thread(protothread_serial);
   pt_add_thread(protothread_anim0);
 
   // start scheduler
