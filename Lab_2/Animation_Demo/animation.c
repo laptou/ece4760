@@ -158,7 +158,7 @@ const fix15 BOID_TURN_MARGIN = int2fix15(100);
 const fix15 BOID_TURN_FACTOR = float2fix15(0.2);
 const fix15 BOID_VISUAL_RANGE = float2fix15(40);
 const fix15 BOID_VISUAL_RANGE_SQ = multfix15(BOID_VISUAL_RANGE, BOID_VISUAL_RANGE);
-const fix15 BOID_PROTECTED_RANGE = float2fix15(8);
+const fix15 BOID_PROTECTED_RANGE = float2fix15(8); // 8 before
 const fix15 BOID_PROTECTED_RANGE_SQ = multfix15(BOID_PROTECTED_RANGE, BOID_PROTECTED_RANGE);
 const fix15 BOID_CENTERING_FACTOR = float2fix15(0.0005);
 const fix15 BOID_AVOID_FACTOR = float2fix15(0.05);
@@ -269,16 +269,12 @@ void update_boid_motion(size_t i)
       continue;
     }
 
-    if (dist_sq < BOID_PROTECTED_RANGE_SQ)
+    if (absfix15(dist_sq) < absfix15(BOID_PROTECTED_RANGE_SQ))
     {
       // other is w/in our protected range
       close_neighbor_rel_position = add_vec2(
           close_neighbor_rel_position,
           sub_vec2(boid->position, other->position));
-    }
-    else
-    {
-      continue;
     }
   }
 
@@ -292,7 +288,7 @@ void update_boid_motion(size_t i)
   // Cohesion velocity update
   boid->velocity = add_vec2(boid->velocity, mul_vec2_fix15(BOID_CENTERING_FACTOR, sub_vec2(avg_visual_neighbor_position, boid->position)));
   // Avoid velocity update
-  // boid->velocity = add_vec2(boid->velocity, mul_vec2_fix15(BOID_AVOID_FACTOR, close_neighbor_rel_position));
+  boid->velocity = add_vec2(boid->velocity, mul_vec2_fix15(BOID_AVOID_FACTOR, close_neighbor_rel_position));
 
 #pragma endregion
 
