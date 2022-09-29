@@ -63,7 +63,7 @@ typedef enum wrap
   wrap_all
 } wrap_t;
 
-static wrap_t current_wrap = wrap_box;
+volatile wrap_t current_wrap = wrap_box;
 #pragma region fixed point vector math
 typedef struct vec2
 {
@@ -149,6 +149,10 @@ const fix15 WALL_BOTTOM = int2fix15(380);
 const fix15 WALL_TOP = int2fix15(100);
 const fix15 WALL_LEFT = int2fix15(100);
 const fix15 WALL_RIGHT = int2fix15(540);
+const fix15 SCREEN_BOTTOM = int2fix15(430);
+const fix15 SCREEN_TOP = int2fix15(50);
+const fix15 SCREEN_LEFT = int2fix15(50);
+const fix15 SCREEN_RIGHT = int2fix15(600);
 
 static int width = 10;
 
@@ -168,7 +172,7 @@ const fix15 BOID_TURN_MARGIN = int2fix15(100);
 const fix15 BOID_TURN_FACTOR = float2fix15(0.2);
 const fix15 BOID_VISUAL_RANGE = float2fix15(40);
 const fix15 BOID_VISUAL_RANGE_SQ = multfix15(BOID_VISUAL_RANGE, BOID_VISUAL_RANGE);
-const fix15 BOID_PROTECTED_RANGE = float2fix15(8); // 8 before
+const fix15 BOID_PROTECTED_RANGE = float2fix15(8);
 const fix15 BOID_PROTECTED_RANGE_SQ = multfix15(BOID_PROTECTED_RANGE, BOID_PROTECTED_RANGE);
 const fix15 BOID_CENTERING_FACTOR = float2fix15(0.0005);
 const fix15 BOID_AVOID_FACTOR = float2fix15(0.05);
@@ -221,10 +225,10 @@ void draw_arena()
   }
   else if (current_wrap == wrap_top_bottom)
   {
-    drawVLine(100, 100, 280, BLACK);
-    drawVLine(540, 100, 280, BLACK);
     drawVLine(100, 100, 280, WHITE);
     drawVLine(540, 100, 280, WHITE);
+    drawHLine(100, 100, 440, BLACK);
+    drawHLine(100, 380, 440, BLACK);
   }
   else
   {
@@ -241,23 +245,50 @@ void update_boid_motion(size_t i)
   boid_state_t *boid = &boids[i];
 
 #pragma region steer away from walls
-  if (boid->position.x < WALL_LEFT)
+  switch (current_wrap)
   {
-    boid->velocity.x += BOID_TURN_FACTOR;
-  }
-  else if (boid->position.x > WALL_RIGHT)
-  {
-    boid->velocity.x -= BOID_TURN_FACTOR;
+  case wrap_box:
+    if (boid->position.x < WALL_LEFT)
+    {
+      boid->velocity.x += BOID_TURN_FACTOR;
+    }
+    else if (boid->position.x > WALL_RIGHT)
+    {
+      boid->velocity.x -= BOID_TURN_FACTOR;
+    }
+
+    if (boid->position.y < WALL_TOP)
+    {
+      boid->velocity.y += BOID_TURN_FACTOR;
+    }
+    else if (boid->position.y > WALL_BOTTOM)
+    {
+      boid->velocity.y -= BOID_TURN_FACTOR;
+    }
+    break;
+  case wrap_top_bottom:
+    if (boid->position.x < WALL_LEFT)
+    {
+      boid->velocity.x += BOID_TURN_FACTOR;
+    }
+    else if (boid->position.x > WALL_RIGHT)
+    {
+      boid->velocity.x -= BOID_TURN_FACTOR;
+    }
+
+    if (boid->position.y <= SCREEN_TOP)
+    {
+      boid->position.y += 480;
+    }
+    else if (boid->position.y > SCREEN_BOTTOM)
+    {
+      boid->postion.y -= 480;
+    }
+    break;
+  case wrap_all:
+    break;
   }
 
-  if (boid->position.y < WALL_TOP)
-  {
-    boid->velocity.y += BOID_TURN_FACTOR;
-  }
-  else if (boid->position.y > WALL_BOTTOM)
-  {
-    boid->velocity.y -= BOID_TURN_FACTOR;
-  }
 #pragma endregion
 
 #pragma swarm behaviour
