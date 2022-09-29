@@ -54,6 +54,7 @@ typedef signed int fix15;
 #define max(a, b) (a > b ? a : b)
 #define clamp(x, a, b) min(max(x, a), b)
 #pragma endregion
+static char fpstext[40];
 
 #pragma region fixed point vector math
 typedef struct vec2
@@ -74,7 +75,7 @@ inline vec2_t mul_vec2_fix15(fix15 x, vec2_t v)
   return (vec2_t){.x = multfix15(v.x, x), .y = multfix15(v.y, x)};
 }
 
-inline vec2_t div_vec2_fix15(fix15 x, vec2_t v)
+inline vec2_t div_vec2_fix15(vec2_t v, fix15 x)
 {
   return (vec2_t){.x = divfix(v.x, x), .y = divfix(v.y, x)};
 }
@@ -99,6 +100,32 @@ inline fix15 dot_vec2(vec2_t a, vec2_t b)
   return multfix15(a.x, b.x) + multfix15(a.y, b.y);
 }
 
+fix15 norm_vec2(vec2_t a)
+{
+  // fix15 z_max, z_min;
+  // fix15 x = absfix15(a.x);
+  // fix15 y = absfix15(a.x);
+
+  // if (x > y)
+  // {
+  //   z_max = x;
+  //   z_min = y;
+  // }
+  // else
+  // {
+  //   z_max = y;
+  //   z_min = x;
+  // }
+
+  // static const fix15 alpha = float2fix15(0.96043387);
+  // static const fix15 beta = float2fix15(0.3978247);
+
+  // return multfix15(alpha, absfix15(z_max)) + multfix15(beta, absfix15(z_min));
+
+  fix15 norm_sq = dot_vec2(a, a);
+  return float2fix15(sqrtf(fix2float15(norm_sq)));
+}
+
 // squared distance between a and b
 inline fix15 dist_sq_vec2(vec2_t a, vec2_t b)
 {
@@ -115,11 +142,6 @@ const fix15 WALL_TOP = int2fix15(100);
 const fix15 WALL_LEFT = int2fix15(100);
 const fix15 WALL_RIGHT = int2fix15(540);
 
-#define hitBottom(b) (b > WALL_BOTTOM)
-#define hitTop(b) (b < WALL_TOP)
-#define hitLeft(a) (a < WALL_LEFT)
-#define hitRight(a) (a > WALL_RIGHT)
-
 #pragma endregion
 
 #pragma region rendering parameters
@@ -135,19 +157,19 @@ char color = WHITE;
 const fix15 BOID_TURN_MARGIN = int2fix15(100);
 const fix15 BOID_TURN_FACTOR = float2fix15(0.2);
 const fix15 BOID_VISUAL_RANGE = float2fix15(40);
-const fix15 BOID_VISUAL_RANGE_SQ = float2fix15(40 * 40);
+const fix15 BOID_VISUAL_RANGE_SQ = multfix15(BOID_VISUAL_RANGE, BOID_VISUAL_RANGE);
 const fix15 BOID_PROTECTED_RANGE = float2fix15(8);
-const fix15 BOID_PROTECTED_RANGE_SQ = float2fix15(8 * 8);
+const fix15 BOID_PROTECTED_RANGE_SQ = multfix15(BOID_PROTECTED_RANGE, BOID_PROTECTED_RANGE);
 const fix15 BOID_CENTERING_FACTOR = float2fix15(0.0005);
 const fix15 BOID_AVOID_FACTOR = float2fix15(0.05);
 const fix15 BOID_MATCHING_FACTOR = float2fix15(0.05);
 const fix15 BOID_MAX_SPEED = float2fix15(6);
+const fix15 BOID_MAX_SPEED_SQ = multfix15(BOID_MAX_SPEED, BOID_MAX_SPEED);
 const fix15 BOID_MIN_SPEED = float2fix15(3);
+const fix15 BOID_MIN_SPEED_SQ = multfix15(BOID_MIN_SPEED, BOID_MIN_SPEED);
 const fix15 BOID_MAX_BIAS = float2fix15(0.01);
 const fix15 BOID_BIAS_INCREMENT = float2fix15(0.00004);
 const fix15 BOID_DEFAULT_BIASVAL = float2fix15(0.001);
-
-fix15 close;
 
 #pragma endregion
 
@@ -156,15 +178,9 @@ typedef struct boid_state
 {
   vec2_t position;
   vec2_t velocity;
-
-  // sum of relative positions of boids within avoid range
-  vec2_t close_neighbor_position;
-
-  // average of velocities of boids within visual range
-  vec2_t visual_neighbor_velocity;
 } boid_state_t;
 
-#define BOID_COUNT 2
+#define BOID_COUNT 30
 
 boid_state_t boids[BOID_COUNT];
 #pragma endregion
@@ -176,14 +192,11 @@ void spawn_boid(boid_state_t *boid, int direction)
   boid->position.x = int2fix15(320);
   boid->position.y = int2fix15(240);
 
-  // Choose left or right
-  if (direction)
-    boid->velocity.x = int2fix15(3);
-  else
-    boid->velocity.x = int2fix15(-3);
+  double angle = (double)random();
 
-  // Moving down
-  boid->velocity.y = int2fix15(1);
+  boid->velocity.y = float2fix15((float)sin(angle));
+  boid->velocity.x = float2fix15((float)cos(angle));
+  boid->velocity = mul_vec2_fix15(int2fix15(3), boid->velocity);
 }
 
 // Draw the boundaries
@@ -222,10 +235,10 @@ void update_boid_motion(size_t i)
 
 #pragma swarm behaviour
 
-  boid->close_neighbor_position = VEC2_ZERO;
-  boid->visual_neighbor_velocity = VEC2_ZERO;
+  vec2_t close_neighbor_rel_position = VEC2_ZERO;
+  vec2_t visual_neighbor_position = VEC2_ZERO;
+  vec2_t visual_neighbor_velocity = VEC2_ZERO;
 
-  size_t close_neighbor_count = 0;
   size_t visual_neighbor_count = 0;
 
   // Figure out what neighbouring boids are doing
@@ -243,9 +256,13 @@ void update_boid_motion(size_t i)
       // other is w/in our visual range
       visual_neighbor_count++;
 
-      boid->visual_neighbor_velocity = add_vec2(
-          boid->visual_neighbor_velocity,
+      visual_neighbor_velocity = add_vec2(
+          visual_neighbor_velocity,
           other->velocity);
+
+      visual_neighbor_position = add_vec2(
+          visual_neighbor_position,
+          other->position);
     }
     else
     {
@@ -255,9 +272,8 @@ void update_boid_motion(size_t i)
     if (dist_sq < BOID_PROTECTED_RANGE_SQ)
     {
       // other is w/in our protected range
-      close_neighbor_count++;
-      boid->close_neighbor_position = add_vec2(
-          boid->close_neighbor_position,
+      close_neighbor_rel_position = add_vec2(
+          close_neighbor_rel_position,
           sub_vec2(boid->position, other->position));
     }
     else
@@ -265,11 +281,34 @@ void update_boid_motion(size_t i)
       continue;
     }
   }
-  //boid->velocity = add_vec2(boid->velocity, mul_vec2_fix15(BOID_AVOID_FACTOR, boid->close_neighbor_position));
 
   // divide sum of neighbour velocities by number of visual neighbours to get
   // average
-  boid->visual_neighbor_velocity = div_vec2_fix15(int2fix15(visual_neighbor_count), boid->visual_neighbor_velocity);
+  vec2_t avg_visual_neighbor_velocity = div_vec2_fix15(visual_neighbor_velocity, int2fix15(visual_neighbor_count));
+  vec2_t avg_visual_neighbor_position = div_vec2_fix15(visual_neighbor_position, int2fix15(visual_neighbor_count));
+
+  // Alignment velocity update
+  boid->velocity = add_vec2(boid->velocity, mul_vec2_fix15(BOID_MATCHING_FACTOR, sub_vec2(avg_visual_neighbor_velocity, boid->velocity)));
+  // Cohesion velocity update
+  boid->velocity = add_vec2(boid->velocity, mul_vec2_fix15(BOID_CENTERING_FACTOR, sub_vec2(avg_visual_neighbor_position, boid->position)));
+  // Avoid velocity update
+  // boid->velocity = add_vec2(boid->velocity, mul_vec2_fix15(BOID_AVOID_FACTOR, close_neighbor_rel_position));
+
+#pragma endregion
+
+#pragma region minimum and maximum speed
+
+  fix15 boid_speed = norm_vec2(boid->velocity);
+  if (boid_speed < BOID_MIN_SPEED)
+  {
+    fix15 speed_factor = divfix(BOID_MIN_SPEED, boid_speed);
+    boid->velocity = mul_vec2_fix15(speed_factor, boid->velocity);
+  }
+  else if (boid_speed > BOID_MAX_SPEED)
+  {
+    fix15 speed_factor = divfix(BOID_MAX_SPEED, boid_speed);
+    boid->velocity = mul_vec2_fix15(speed_factor, boid->velocity);
+  }
 
 #pragma endregion
 
@@ -314,12 +353,17 @@ static PT_THREAD(protothread_serial(struct pt *pt))
 
 typedef struct animation_thread_state
 {
-  int core_num;
+  uint8_t core_num;
 
   // for tracking frame rate
-  int last_frame_start;
-  int current_frame_start;
-  int spare_time;
+  uint32_t first_frame_start;
+  uint32_t last_frame_start;
+  uint32_t current_frame_start;
+  uint32_t spare_time;
+  uint32_t print_frame_start;
+  uint32_t frames_since_print;
+
+  fix15 fps;
 
   // for tracking which boids we are animating on this thread
   // threads should not have overlapping ranges
@@ -335,19 +379,22 @@ void init_animation_thread(animation_thread_state_t *state)
   {
     spawn_boid(&boids[i], i % 2);
   }
+
+  state->first_frame_start = time_us_32();
 }
 
 void update_animation_thread(animation_thread_state_t *state)
 {
   // Measure time at start of thread
-  int last_frame_start = state->current_frame_start;
-  int current_frame_start = time_us_32();
+  uint32_t last_frame_start = state->current_frame_start;
+  uint32_t current_frame_start = time_us_32();
   state->current_frame_start = current_frame_start;
-  int time_delta = current_frame_start - last_frame_start;
+  uint32_t time_delta = current_frame_start - last_frame_start;
 
   for (size_t i = state->first_boid; i < state->last_boid; i++)
   {
-    close = 0;
+    assert(i < BOID_COUNT);
+
     boid_state_t *boid = &boids[i];
     // erase boid
     drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 2, 2, BLACK);
@@ -356,6 +403,38 @@ void update_animation_thread(animation_thread_state_t *state)
     // draw the boid at its new position
     drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 2, 2, color);
   }
+
+  state->frames_since_print++;
+
+  if (state->frames_since_print >= 30)
+  {
+    uint32_t time_delta_since_print = state->current_frame_start - state->print_frame_start;
+    uint32_t time_delta_since_start = state->current_frame_start - state->first_frame_start;
+
+    uint32_t time_delta_per_frame = time_delta_since_print / state->frames_since_print / 30;
+
+    fix15 fps = divfix(divfix(int2fix15(1000), time_delta_per_frame), int2fix15(1000));
+
+    // printf("fps: %f, time: %d", fix2float15(fps), time_delta_since_start / 1000000);
+    state->fps = fps;
+    state->print_frame_start = state->current_frame_start;
+    state->frames_since_print = 0;
+  }
+  fillRect(65, 20, 176, 80, BLACK);
+  static char fps_text[30];
+  setTextColor(WHITE);
+  setTextSize(1);
+  setCursor(65, 20);
+  sprintf(fps_text, "fps: %f", fix2float15(state->fps));
+  writeString(fps_text);
+  setCursor(65, 40);
+  sprintf(fps_text, "boids: %d", state->last_boid - state->first_boid);
+  writeString(fps_text);
+  setCursor(65, 60);
+  uint32_t time_delta_since_start = state->current_frame_start - state->first_frame_start;
+
+  sprintf(fps_text, "time: %d", time_delta_since_start / 1000000);
+  writeString(fps_text);
 
   // draw the boundaries
   draw_arena();
@@ -370,13 +449,16 @@ static PT_THREAD(protothread_anim0(struct pt *pt))
   // Mark beginning of thread
   PT_BEGIN(pt);
 
+  animation_thread_state_t *state = &animation_thread_states[0];
+
   // spawn boids
-  init_animation_thread(&animation_thread_states[0]);
+  init_animation_thread(state);
 
   while (1)
   {
-    update_animation_thread(&animation_thread_states[0]);
-    PT_YIELD_usec(animation_thread_states[0].spare_time);
+    update_animation_thread(state);
+
+    PT_YIELD_usec(state->spare_time);
 
     // NEVER exit while
   } // END WHILE(1)
@@ -430,18 +512,18 @@ int main()
   // initialize animation thread states
   animation_thread_states[0].core_num = 0;
   animation_thread_states[0].first_boid = 0;
-  animation_thread_states[0].last_boid = 1;
+  animation_thread_states[0].last_boid = 30;
 
   animation_thread_states[1].core_num = 1;
-  animation_thread_states[1].first_boid = 1;
-  animation_thread_states[1].last_boid = 2;
+  animation_thread_states[1].first_boid = 16;
+  animation_thread_states[1].last_boid = 31;
 
   // start core 1
-  multicore_reset_core1();
-  multicore_launch_core1(&core1_main);
+  // multicore_reset_core1();
+  // multicore_launch_core1(&core1_main);
 
   // add threads
-  pt_add_thread(protothread_serial);
+  // pt_add_thread(protothread_serial);
   pt_add_thread(protothread_anim0);
 
   // start scheduler
