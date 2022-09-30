@@ -56,14 +56,6 @@ typedef signed int fix15;
 #pragma endregion
 static char fpstext[40];
 
-typedef enum wrap
-{
-  wrap_box,
-  wrap_top_bottom,
-  wrap_all
-} wrap_t;
-
-volatile wrap_t current_wrap = wrap_box;
 #pragma region fixed point vector math
 typedef struct vec2
 {
@@ -143,18 +135,27 @@ inline fix15 dist_sq_vec2(vec2_t a, vec2_t b)
 
 #pragma endregion
 
+typedef enum wrap
+{
+  wrap_box,
+  wrap_top_bottom,
+  wrap_all
+} wrap_t;
+
+static volatile wrap_t current_wrap = wrap_box;
+
 #pragma region wall detection
 
 const fix15 WALL_BOTTOM = int2fix15(380);
 const fix15 WALL_TOP = int2fix15(100);
-const fix15 WALL_LEFT = int2fix15(100);
-const fix15 WALL_RIGHT = int2fix15(540);
-const fix15 SCREEN_BOTTOM = int2fix15(430);
-const fix15 SCREEN_TOP = int2fix15(50);
-const fix15 SCREEN_LEFT = int2fix15(50);
-const fix15 SCREEN_RIGHT = int2fix15(600);
+static volatile fix15 WALL_LEFT = int2fix15(100);
+static volatile fix15 WALL_RIGHT = int2fix15(540);
+const fix15 SCREEN_BOTTOM = int2fix15(480);
+const fix15 SCREEN_TOP = int2fix15(0);
+const fix15 SCREEN_LEFT = int2fix15(0);
+const fix15 SCREEN_RIGHT = int2fix15(640);
 
-static int width = 10;
+// static volatile fix15 width = int2fix15(20);
 
 #pragma endregion
 
@@ -216,26 +217,26 @@ void spawn_boid(boid_state_t *boid, int direction)
 // Draw the boundaries
 void draw_arena()
 {
-  if (current_wrap == wrap_box)
+  switch (current_wrap)
   {
+  case wrap_box:
+
     drawVLine(100, 100, 280, WHITE);
     drawVLine(540, 100, 280, WHITE);
     drawHLine(100, 100, 440, WHITE);
     drawHLine(100, 380, 440, WHITE);
-  }
-  else if (current_wrap == wrap_top_bottom)
-  {
-    drawVLine(100, 100, 280, WHITE);
-    drawVLine(540, 100, 280, WHITE);
-    drawHLine(100, 100, 440, BLACK);
-    drawHLine(100, 380, 440, BLACK);
-  }
-  else
-  {
-    drawVLine(100, 100, 280, BLACK);
-    drawVLine(540, 100, 280, BLACK);
-    drawHLine(100, 100, 440, BLACK);
-    drawHLine(100, 380, 440, BLACK);
+
+    break;
+
+  case wrap_top_bottom:
+    drawVLine(fix2int15(WALL_LEFT), 0, 480, WHITE);
+    drawVLine(fix2int15(WALL_RIGHT), 0, 480, WHITE);
+
+    break;
+  case wrap_all:
+    // fillRect(0, 0, 640, 480, BLACK);
+
+    break;
   }
 }
 
@@ -278,14 +279,31 @@ void update_boid_motion(size_t i)
 
     if (boid->position.y <= SCREEN_TOP)
     {
-      boid->position.y += 480;
+      boid->position.y = SCREEN_BOTTOM;
     }
     else if (boid->position.y > SCREEN_BOTTOM)
     {
-      boid->postion.y -= 480;
+      boid->position.y = SCREEN_TOP;
     }
     break;
   case wrap_all:
+    if (boid->position.x < SCREEN_LEFT)
+    {
+      boid->position.x = SCREEN_RIGHT;
+    }
+    else if (boid->position.x > SCREEN_RIGHT)
+    {
+      boid->position.x = SCREEN_LEFT;
+    }
+
+    if (boid->position.y < SCREEN_TOP)
+    {
+      boid->position.y = SCREEN_BOTTOM;
+    }
+    else if (boid->position.y > SCREEN_BOTTOM)
+    {
+      boid->position.y = SCREEN_TOP;
+    }
     break;
   }
 
@@ -387,7 +405,7 @@ static PT_THREAD(protothread_serial(struct pt *pt))
   while (1)
   {
     // print prompt
-    sprintf(pt_serial_out_buffer, "input a number in the range 1-7: ");
+    sprintf(pt_serial_out_buffer, "input a number 1-3 to change the wrap mode, and a number 10-500 to change the width: ");
     // non-blocking write
     serial_write;
     // spawn a thread to do the non-blocking serial read
@@ -402,14 +420,36 @@ static PT_THREAD(protothread_serial(struct pt *pt))
     if (user_input == 1)
     {
       current_wrap = wrap_box;
+      drawVLine(fix2int15(WALL_LEFT), 0, 480, BLACK);
+      drawVLine(fix2int15(WALL_RIGHT), 0, 480, BLACK);
+      WALL_LEFT = int2fix15(100);
+      WALL_RIGHT = int2fix15(540);
     }
     if (user_input == 2)
     {
       current_wrap = wrap_top_bottom;
+      drawHLine(100, 100, 440, BLACK);
+      drawHLine(100, 380, 440, BLACK);
     }
     if (user_input == 3)
     {
       current_wrap = wrap_all;
+      drawVLine(100, 100, 280, BLACK);
+      drawVLine(540, 100, 280, BLACK);
+      drawHLine(100, 100, 440, BLACK);
+      drawHLine(100, 380, 440, BLACK);
+      drawVLine(fix2int15(WALL_LEFT), 0, 480, BLACK);
+      drawVLine(fix2int15(WALL_RIGHT), 0, 480, BLACK);
+    }
+    if (user_input >= 10 && user_input <= 500 && current_wrap == wrap_top_bottom)
+    {
+      drawVLine(fix2int15(WALL_LEFT), 0, 480, BLACK);
+      drawVLine(fix2int15(WALL_RIGHT), 0, 480, BLACK);
+
+      WALL_LEFT = int2fix15(320) - divfix(int2fix15(user_input), int2fix15(2));
+      WALL_RIGHT = int2fix15(320) + divfix(int2fix15(user_input), int2fix15(2));
+      //    WALL_LEFT = int2fix15(320 - width / 2);
+      //  WALL_RIGHT = int2fix15(320 + width / 2);
     }
 
   } // END WHILE(1)
@@ -502,6 +542,7 @@ void update_animation_thread(animation_thread_state_t *state)
 
   sprintf(fps_text, "time: %d", time_delta_since_start / 1000000);
   writeString(fps_text);
+  setCursor(65, 80);
 
   // draw the boundaries
   draw_arena();
