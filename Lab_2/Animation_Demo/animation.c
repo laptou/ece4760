@@ -360,29 +360,6 @@ void update_boid_motion(size_t i)
 
     fix15 dist_sq = dist_sq_vec2(boid->position, other->position);
 
-    // assert(dist_sq >= 0);
-
-    if (dist_sq < 0)
-    {
-      printf("boid->position %.3f %.3f\n", fix2float15(boid->position.x), fix2float15(boid->position.y));
-      printf("other->position %.3f %.3f\n", fix2float15(other->position.x), fix2float15(other->position.y));
-      vec2_t dist = sub_vec2(boid->position, other->position);
-      printf("dist %.3f %.3f\n", fix2float15(dist.x), fix2float15(dist.y));
-
-      fix15 d2x = multfix15(dist.x, dist.x);
-      fix15 d2y = multfix15(dist.y, dist.y);
-      fix15 d2 = d2x + d2y;
-
-      fix15 ss_d2x = ss_mult_32(dist.x, dist.x);
-      fix15 ss_d2y = ss_mult_32(dist.y, dist.y);
-      fix15 ss_d2 = ss_add_32(ss_d2x, ss_d2y);
-
-      printf("dist * dist %.3f %.3f %.3f\n", fix2float15(d2x), fix2float15(d2y), fix2float15(d2));
-      printf("dist * dist ss %.3f %.3f %.3f\n", fix2float15(ss_d2x), fix2float15(ss_d2y), fix2float15(ss_d2));
-      printf("dist * dist ss hex %#010x %#010x %#010x\n", ss_d2x, ss_d2y, ss_d2);
-      assert(false);
-    }
-
     if (dist_sq < BOID_VISUAL_RANGE_SQ)
     {
       // other is w/in our visual range
