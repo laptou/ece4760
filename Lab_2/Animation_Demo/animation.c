@@ -184,7 +184,7 @@ const fix15 BOID_MIN_SPEED = float2fix15(3);
 const fix15 BOID_MIN_SPEED_SQ = multfix15(BOID_MIN_SPEED, BOID_MIN_SPEED);
 const fix15 BOID_MAX_BIAS = float2fix15(0.01);
 const fix15 BOID_BIAS_INCREMENT = float2fix15(0.00004);
-const fix15 BOID_DEFAULT_BIASVAL = float2fix15(0.001);
+const fix15 BOID_BIASVAL = float2fix15(0.001);
 
 #pragma endregion
 
@@ -193,7 +193,11 @@ typedef struct boid_state
 {
   vec2_t position;
   vec2_t velocity;
+  int bias_group_color;
 } boid_state_t;
+
+volatile int group1_size = 0;
+volatile int group2_size = 0;
 
 #define BOID_COUNT 30
 
@@ -244,6 +248,21 @@ void draw_arena()
 void update_boid_motion(size_t i)
 {
   boid_state_t *boid = &boids[i];
+#pragma region bias group
+  if (i < group1_size)
+  { // group 1
+    boid->velocity.x = multfix15((int2fix15(1) - BOID_BIASVAL), boid->velocity.x) + BOID_BIASVAL;
+    boid->bias_group_color = BLUE;
+  }
+  else if (i >= group2_size && i < group1_size + group2_size)
+  { // group 2
+    boid->velocity.x = multfix15((int2fix15(1) - BOID_BIASVAL), boid->velocity.x) - BOID_BIASVAL;
+    boid->bias_group_color = RED;
+  }
+  else
+  {
+    boid->bias_group_color = WHITE;
+  }
 
 #pragma region steer away from walls
   switch (current_wrap)
@@ -327,6 +346,9 @@ void update_boid_motion(size_t i)
 
     fix15 dist_sq = dist_sq_vec2(boid->position, other->position);
 
+    assert(false);
+    // assert(dist_sq >= 0);
+
     if (dist_sq < BOID_VISUAL_RANGE_SQ)
     {
       // other is w/in our visual range
@@ -342,10 +364,11 @@ void update_boid_motion(size_t i)
     }
     else
     {
+      // skip the next check b/c protected range is smaller than visual range
       continue;
     }
 
-    if (absfix15(dist_sq) < absfix15(BOID_PROTECTED_RANGE_SQ))
+    if (dist_sq < BOID_PROTECTED_RANGE_SQ)
     {
       // other is w/in our protected range
       close_neighbor_rel_position = add_vec2(
@@ -405,7 +428,9 @@ static PT_THREAD(protothread_serial(struct pt *pt))
   while (1)
   {
     // print prompt
-    sprintf(pt_serial_out_buffer, "input a number 1-3 to change the wrap mode, and a number 10-500 to change the width: ");
+    sprintf(pt_serial_out_buffer, "input a number 1-3 to change the wrap mode, 4-6 for bias group sizes (4, 5) and bias val (6)");
+    sprintf(pt_serial_out_buffer, "and a number 10-500 to change the width: ");
+
     // non-blocking write
     serial_write;
     // spawn a thread to do the non-blocking serial read
@@ -440,6 +465,30 @@ static PT_THREAD(protothread_serial(struct pt *pt))
       drawHLine(100, 380, 440, BLACK);
       drawVLine(fix2int15(WALL_LEFT), 0, 480, BLACK);
       drawVLine(fix2int15(WALL_RIGHT), 0, 480, BLACK);
+    }
+    if (user_input == 4)
+    {
+      sprintf(pt_serial_out_buffer, "input a size for group 1");
+      serial_write;
+      serial_read;
+      sscanf(pt_serial_in_buffer, "%d", &user_input);
+      group1_size == user_input;
+    }
+    if (user_input == 5)
+    {
+      sprintf(pt_serial_out_buffer, "input a size for group 2");
+      serial_write;
+      serial_read;
+      sscanf(pt_serial_in_buffer, "%d", &user_input);
+      group2_size == user_input;
+    }
+    if (user_input == 6)
+    {
+      sprintf(pt_serial_out_buffer, "input bias value");
+      serial_write;
+      serial_read;
+      sscanf(pt_serial_in_buffer, "%d", &user_input);
+      BOID_BIASVAL == int2fix15(user_input);
     }
     if (user_input >= 10 && user_input <= 500 && current_wrap == wrap_top_bottom)
     {
@@ -500,15 +549,17 @@ void update_animation_thread(animation_thread_state_t *state)
 
   for (size_t i = state->first_boid; i < state->last_boid; i++)
   {
+    boid_state_t *boid = &boids[i];
+
     assert(i < BOID_COUNT);
 
-    boid_state_t *boid = &boids[i];
     // erase boid
     drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 2, 2, BLACK);
     // update boid's position and velocity
     update_boid_motion(i);
     // draw the boid at its new position
-    drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 2, 2, color);
+    // drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 2, 2, color);
+    drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 2, 2, boid->bias_group_color);
   }
 
   state->frames_since_print++;
@@ -527,7 +578,7 @@ void update_animation_thread(animation_thread_state_t *state)
     state->print_frame_start = state->current_frame_start;
     state->frames_since_print = 0;
   }
-  fillRect(65, 20, 176, 80, BLACK);
+  fillRect(65, 20, 120, 80, BLACK);
   static char fps_text[30];
   setTextColor(WHITE);
   setTextSize(1);
