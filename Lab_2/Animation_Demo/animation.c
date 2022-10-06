@@ -217,7 +217,7 @@ const fix15 BOID_MIN_SPEED = float2fix15(3);
 const fix15 BOID_MIN_SPEED_SQ = multfix15(BOID_MIN_SPEED, BOID_MIN_SPEED);
 const fix15 BOID_MAX_BIAS = float2fix15(0.01);
 const fix15 BOID_BIAS_INCREMENT = float2fix15(0.00004);
-const fix15 BOID_BIASVAL = float2fix15(0.001);
+volatile fix15 BOID_BIASVAL = float2fix15(0.001);
 
 #pragma endregion
 
@@ -281,21 +281,6 @@ void draw_arena()
 void update_boid_motion(size_t i)
 {
   boid_state_t *boid = &boids[i];
-#pragma region bias group
-  if (i < group1_size)
-  { // group 1
-    boid->velocity.x = multfix15((int2fix15(1) - BOID_BIASVAL), boid->velocity.x) + BOID_BIASVAL;
-    boid->bias_group_color = BLUE;
-  }
-  else if (i >= group2_size && i < group1_size + group2_size)
-  { // group 2
-    boid->velocity.x = multfix15((int2fix15(1) - BOID_BIASVAL), boid->velocity.x) - BOID_BIASVAL;
-    boid->bias_group_color = RED;
-  }
-  else
-  {
-    boid->bias_group_color = WHITE;
-  }
 
 #pragma region steer away from walls
   switch (current_wrap)
@@ -424,6 +409,23 @@ void update_boid_motion(size_t i)
 
 #pragma endregion
 
+#pragma region bias group
+  if (i < group1_size)
+  { // group 1
+    boid->velocity.x = multfix15((int2fix15(1) - BOID_BIASVAL), boid->velocity.x) + BOID_BIASVAL;
+    boid->bias_group_color = BLUE;
+  }
+  else if (i >= group1_size && i < group1_size + group2_size)
+  { // group 2
+    boid->velocity.x = multfix15((int2fix15(1) - BOID_BIASVAL), boid->velocity.x) - BOID_BIASVAL;
+    boid->bias_group_color = RED;
+  }
+  else
+  {
+    boid->bias_group_color = WHITE;
+  }
+#pragma endregion
+
 #pragma region minimum and maximum speed
 
   fix15 boid_speed = norm_vec2(boid->velocity);
@@ -452,6 +454,7 @@ static PT_THREAD(protothread_serial(struct pt *pt))
   PT_BEGIN(pt);
   // stores user input
   static int user_input;
+  static float bias_val_f;
   // wait for 0.1 sec
   PT_YIELD_usec(1000000);
   // announce the threader version
@@ -461,8 +464,7 @@ static PT_THREAD(protothread_serial(struct pt *pt))
   while (1)
   {
     // print prompt
-    sprintf(pt_serial_out_buffer, "input a number 1-3 to change the wrap mode, 4-6 for bias group sizes (4, 5) and bias val (6)");
-    sprintf(pt_serial_out_buffer, "and a number 10-500 to change the width: ");
+    sprintf(pt_serial_out_buffer, "input a number 1-3 to change the wrap mode, 4-6 for bias group sizes (4, 5) and bias val (6) and a number 10-500 to change the width: ");
 
     // non-blocking write
     serial_write;
@@ -501,27 +503,28 @@ static PT_THREAD(protothread_serial(struct pt *pt))
     }
     if (user_input == 4)
     {
-      sprintf(pt_serial_out_buffer, "input a size for group 1");
+      sprintf(pt_serial_out_buffer, "input a size for group 1: ");
       serial_write;
       serial_read;
       sscanf(pt_serial_in_buffer, "%d", &user_input);
-      group1_size == user_input;
+      group1_size = user_input;
     }
     if (user_input == 5)
     {
-      sprintf(pt_serial_out_buffer, "input a size for group 2");
+      sprintf(pt_serial_out_buffer, "input a size for group 2: ");
       serial_write;
       serial_read;
       sscanf(pt_serial_in_buffer, "%d", &user_input);
-      group2_size == user_input;
+      group2_size = user_input;
     }
     if (user_input == 6)
     {
-      sprintf(pt_serial_out_buffer, "input bias value");
+      sprintf(pt_serial_out_buffer, "input bias value: ");
       serial_write;
       serial_read;
-      sscanf(pt_serial_in_buffer, "%d", &user_input);
-      BOID_BIASVAL == int2fix15(user_input);
+
+      sscanf(pt_serial_in_buffer, "%f", &bias_val_f);
+      BOID_BIASVAL = float2fix15(bias_val_f);
     }
     if (user_input >= 10 && user_input <= 500 && current_wrap == wrap_top_bottom)
     {
@@ -611,7 +614,7 @@ void update_animation_thread(animation_thread_state_t *state)
     state->print_frame_start = state->current_frame_start;
     state->frames_since_print = 0;
   }
-  fillRect(65, 20, 120, 80, BLACK);
+  fillRect(65, 20, 100, 80, BLACK);
   static char fps_text[30];
   setTextColor(WHITE);
   setTextSize(1);
