@@ -27,6 +27,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
+#include <limits.h>
 // Include Pico libraries
 #include "pico/stdlib.h"
 #include "pico/divider.h"
@@ -57,6 +58,38 @@ typedef signed int fix15;
 static char fpstext[40];
 
 #pragma region fixed point vector math
+
+// signed saturating 32-bit addition
+fix15 ss_add_32(const fix15 a, const fix15 b)
+{
+  int c;
+  c = a + b;
+  if (((a ^ b) & INT_MIN) == 0)
+  {
+    if ((c ^ a) & INT_MIN)
+    {
+      c = (a < 0) ? INT_MIN : INT_MAX;
+    }
+  }
+  return c;
+}
+
+fix15 ss_mult_32(const fix15 a, const fix15 b)
+{
+  // based on https://stackoverflow.com/a/29285223
+  int sa = (a >> 31); // fills the integer with the sign bit of a
+  int sb = (b >> 31); // fills the integer with the sign bit of b
+  int so = (sa ^ sb); // expected sign of output
+
+  int c = multfix15(a, b); // multiply the integers
+  int sc = (c >> 31);      // fills the integer with the sign bit of c
+
+  // if expected sign and actual sign are different, set c to 0x7FFFFFFF or 0x8000000 depending on desired sign
+  // so will be 0xFFFFFFFF if desired sign is negative, and 0x00000000 if desired sign is positive
+  c ^= (so ^ sc) & (c ^ so ^ 0x7FFFFFFF);
+  return c;
+}
+
 typedef struct vec2
 {
   fix15 x;
@@ -97,7 +130,7 @@ inline vec2_t sub_vec2(vec2_t a, vec2_t b)
 
 inline fix15 dot_vec2(vec2_t a, vec2_t b)
 {
-  return multfix15(a.x, b.x) + multfix15(a.y, b.y);
+  return ss_add_32(ss_mult_32(a.x, b.x), ss_mult_32(a.y, b.y));
 }
 
 fix15 norm_vec2(vec2_t a)
@@ -327,6 +360,29 @@ void update_boid_motion(size_t i)
 
     fix15 dist_sq = dist_sq_vec2(boid->position, other->position);
 
+    // assert(dist_sq >= 0);
+
+    if (dist_sq < 0)
+    {
+      printf("boid->position %.3f %.3f\n", fix2float15(boid->position.x), fix2float15(boid->position.y));
+      printf("other->position %.3f %.3f\n", fix2float15(other->position.x), fix2float15(other->position.y));
+      vec2_t dist = sub_vec2(boid->position, other->position);
+      printf("dist %.3f %.3f\n", fix2float15(dist.x), fix2float15(dist.y));
+
+      fix15 d2x = multfix15(dist.x, dist.x);
+      fix15 d2y = multfix15(dist.y, dist.y);
+      fix15 d2 = d2x + d2y;
+
+      fix15 ss_d2x = ss_mult_32(dist.x, dist.x);
+      fix15 ss_d2y = ss_mult_32(dist.y, dist.y);
+      fix15 ss_d2 = ss_add_32(ss_d2x, ss_d2y);
+
+      printf("dist * dist %.3f %.3f %.3f\n", fix2float15(d2x), fix2float15(d2y), fix2float15(d2));
+      printf("dist * dist ss %.3f %.3f %.3f\n", fix2float15(ss_d2x), fix2float15(ss_d2y), fix2float15(ss_d2));
+      printf("dist * dist ss hex %#010x %#010x %#010x\n", ss_d2x, ss_d2y, ss_d2);
+      assert(false);
+    }
+
     if (dist_sq < BOID_VISUAL_RANGE_SQ)
     {
       // other is w/in our visual range
@@ -345,7 +401,7 @@ void update_boid_motion(size_t i)
       continue;
     }
 
-    if (absfix15(dist_sq) < absfix15(BOID_PROTECTED_RANGE_SQ))
+    if (dist_sq < BOID_PROTECTED_RANGE_SQ)
     {
       // other is w/in our protected range
       close_neighbor_rel_position = add_vec2(
