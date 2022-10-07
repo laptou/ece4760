@@ -203,14 +203,14 @@ char color = WHITE;
 #pragma region boid parameters
 
 const fix15 BOID_TURN_MARGIN = int2fix15(100);
-const fix15 BOID_TURN_FACTOR = float2fix15(0.2);
+const fix15 BOID_TURN_FACTOR = float2fix15(0.2 * 4);
 const fix15 BOID_VISUAL_RANGE = float2fix15(40);
 const fix15 BOID_VISUAL_RANGE_SQ = multfix15(BOID_VISUAL_RANGE, BOID_VISUAL_RANGE);
 const fix15 BOID_PROTECTED_RANGE = float2fix15(8);
 const fix15 BOID_PROTECTED_RANGE_SQ = multfix15(BOID_PROTECTED_RANGE, BOID_PROTECTED_RANGE);
-const fix15 BOID_CENTERING_FACTOR = float2fix15(0.0005);
-const fix15 BOID_AVOID_FACTOR = float2fix15(0.05);
-const fix15 BOID_MATCHING_FACTOR = float2fix15(0.05);
+const fix15 BOID_CENTERING_FACTOR = float2fix15(0.0005 * 4);
+const fix15 BOID_AVOID_FACTOR = float2fix15(0.05 * 4);
+const fix15 BOID_MATCHING_FACTOR = float2fix15(0.05 * 4);
 const fix15 BOID_MAX_SPEED = float2fix15(6);
 const fix15 BOID_MAX_SPEED_SQ = multfix15(BOID_MAX_SPEED, BOID_MAX_SPEED);
 const fix15 BOID_MIN_SPEED = float2fix15(3);
@@ -589,7 +589,7 @@ void update_animation_thread(animation_thread_state_t *state, int core)
     // erase boid
     drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 1, 1, BLACK);
     // update boid's position and velocity
-    if (i % 4 == 0)
+    if (i % 4 == random() % 4)
     {
       update_boid_motion(i);
     }
@@ -599,7 +599,21 @@ void update_animation_thread(animation_thread_state_t *state, int core)
     }
     // draw the boid at its new position
     // drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 2, 2, color);
-    if (boid->position.y < int2fix15(480) && boid->position.y > int2fix15(0) && boid->position.x > int2fix15(0) && boid->position.x < int2fix15(640))
+    if (current_wrap == wrap_box)
+    {
+      if (boid->position.y < int2fix15(480) && boid->position.y > int2fix15(0) && boid->position.x > int2fix15(0) && boid->position.x < int2fix15(640))
+      {
+        drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 1, 1, boid->bias_group_color);
+      }
+    }
+    else if (current_wrap == wrap_top_bottom)
+    {
+      if (boid->position.x > int2fix15(0) && boid->position.x < int2fix15(640))
+      {
+        drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 1, 1, boid->bias_group_color);
+      }
+    }
+    else
     {
       drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 1, 1, boid->bias_group_color);
     }
