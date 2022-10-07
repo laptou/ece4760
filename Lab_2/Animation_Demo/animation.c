@@ -232,7 +232,7 @@ typedef struct boid_state
 volatile int group1_size = 0;
 volatile int group2_size = 0;
 
-#define BOID_COUNT 30
+#define BOID_COUNT 350
 
 boid_state_t boids[BOID_COUNT];
 #pragma endregion
@@ -464,8 +464,8 @@ static PT_THREAD(protothread_serial(struct pt *pt))
   while (1)
   {
     // print prompt
-    sprintf(pt_serial_out_buffer, "input a number 1-3 to change the wrap mode, 4-6 for bias group sizes (4, 5) and bias val (6) and a number 10-500 to change the width: ");
-
+    // sprintf(pt_serial_out_buffer, "input a number 1-3 to change the wrap mode, 4-6 for bias group sizes (4, 5) and bias val (6) and a number 10-500 to change the width: ");
+    sprintf(pt_serial_out_buffer, "input:");
     // non-blocking write
     serial_write;
     // spawn a thread to do the non-blocking serial read
@@ -575,7 +575,7 @@ void init_animation_thread(animation_thread_state_t *state)
   state->first_frame_start = time_us_32();
 }
 
-void update_animation_thread(animation_thread_state_t *state)
+void update_animation_thread(animation_thread_state_t *state, int core)
 {
   // Measure time at start of thread
   uint32_t last_frame_start = state->current_frame_start;
@@ -590,12 +590,19 @@ void update_animation_thread(animation_thread_state_t *state)
     assert(i < BOID_COUNT);
 
     // erase boid
-    drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 2, 2, BLACK);
+    drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 1, 1, BLACK);
     // update boid's position and velocity
-    update_boid_motion(i);
+    if (i % 2 == 0)
+    {
+      update_boid_motion(i);
+    }
+    else
+    {
+      boid->position = add_vec2(boid->position, boid->velocity);
+    }
     // draw the boid at its new position
     // drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 2, 2, color);
-    drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 2, 2, boid->bias_group_color);
+    drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 1, 1, boid->bias_group_color);
   }
 
   state->frames_since_print++;
@@ -614,22 +621,26 @@ void update_animation_thread(animation_thread_state_t *state)
     state->print_frame_start = state->current_frame_start;
     state->frames_since_print = 0;
   }
-  fillRect(65, 20, 100, 80, BLACK);
-  static char fps_text[30];
-  setTextColor(WHITE);
-  setTextSize(1);
-  setCursor(65, 20);
-  sprintf(fps_text, "fps: %f", fix2float15(state->fps));
-  writeString(fps_text);
-  setCursor(65, 40);
-  sprintf(fps_text, "boids: %d", state->last_boid - state->first_boid);
-  writeString(fps_text);
-  setCursor(65, 60);
-  uint32_t time_delta_since_start = state->current_frame_start - state->first_frame_start;
+  if (core == 0)
+  {
+    fillRect(65, 20, 100, 80, BLACK);
+    static char fps_text[30];
+    setTextColor(WHITE);
+    setTextSize(1);
+    setCursor(65, 20);
+    sprintf(fps_text, "fps: %f", fix2float15(state->fps));
+    writeString(fps_text);
+    setCursor(65, 40);
+    // sprintf(fps_text, "boids: %d", state->last_boid - state->first_boid);
+    sprintf(fps_text, "boids: %d", BOID_COUNT);
+    writeString(fps_text);
+    setCursor(65, 60);
+    uint32_t time_delta_since_start = state->current_frame_start - state->first_frame_start;
 
-  sprintf(fps_text, "time: %d", time_delta_since_start / 1000000);
-  writeString(fps_text);
-  setCursor(65, 80);
+    sprintf(fps_text, "time: %d", time_delta_since_start / 1000000);
+    writeString(fps_text);
+    setCursor(65, 80);
+  }
 
   // draw the boundaries
   draw_arena();
@@ -651,7 +662,7 @@ static PT_THREAD(protothread_anim0(struct pt *pt))
 
   while (1)
   {
-    update_animation_thread(state);
+    update_animation_thread(state, 0);
 
     PT_YIELD_usec(state->spare_time);
 
@@ -672,7 +683,7 @@ static PT_THREAD(protothread_anim1(struct pt *pt))
 
   while (1)
   {
-    update_animation_thread(&animation_thread_states[1]);
+    update_animation_thread(&animation_thread_states[1], 1);
     PT_YIELD_usec(animation_thread_states[1].spare_time);
 
     // NEVER exit while
@@ -687,7 +698,8 @@ static PT_THREAD(protothread_anim1(struct pt *pt))
 void core1_main()
 {
   // Add animation thread
-  pt_add_thread(protothread_anim1);
+  // pt_add_thread(protothread_anim1);
+
   // Start the scheduler
   pt_schedule_start;
 }
@@ -698,6 +710,7 @@ void core1_main()
 // USE ONLY C-sdk library
 int main()
 {
+  set_sys_clock_khz(250000, true);
   // initialize stio
   stdio_init_all();
 
@@ -707,7 +720,7 @@ int main()
   // initialize animation thread states
   animation_thread_states[0].core_num = 0;
   animation_thread_states[0].first_boid = 0;
-  animation_thread_states[0].last_boid = 30;
+  animation_thread_states[0].last_boid = BOID_COUNT;
 
   animation_thread_states[1].core_num = 1;
   animation_thread_states[1].first_boid = 16;
