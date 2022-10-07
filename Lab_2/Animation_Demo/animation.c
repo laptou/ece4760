@@ -569,7 +569,7 @@ void init_animation_thread(animation_thread_state_t *state)
 {
   for (size_t i = state->first_boid; i < state->last_boid; i++)
   {
-    spawn_boid(&boids[i], i % 2);
+    spawn_boid(&boids[i], i % 3);
   }
 
   state->first_frame_start = time_us_32();
@@ -602,7 +602,10 @@ void update_animation_thread(animation_thread_state_t *state, int core)
     }
     // draw the boid at its new position
     // drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 2, 2, color);
-    drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 1, 1, boid->bias_group_color);
+    if (boid->position.y < int2fix15(480) && boid->position.y > int2fix15(0) && boid->position.x > int2fix15(0) && boid->position.x < int2fix15(640))
+    {
+      drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 1, 1, boid->bias_group_color);
+    }
   }
 
   state->frames_since_print++;
