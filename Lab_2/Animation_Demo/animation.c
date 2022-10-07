@@ -232,7 +232,7 @@ typedef struct boid_state
 volatile int group1_size = 0;
 volatile int group2_size = 0;
 
-#define BOID_COUNT 350
+#define BOID_COUNT 650
 
 boid_state_t boids[BOID_COUNT];
 #pragma endregion
@@ -355,7 +355,7 @@ void update_boid_motion(size_t i)
   size_t visual_neighbor_count = 0;
 
   // Figure out what neighbouring boids are doing
-  for (size_t j = 0; j < BOID_COUNT; j++)
+  for (size_t j = 0; j < BOID_COUNT / 2; j++)
   {
     if (i == j)
       continue;
@@ -363,9 +363,6 @@ void update_boid_motion(size_t i)
     boid_state_t *other = &boids[j];
 
     fix15 dist_sq = dist_sq_vec2(boid->position, other->position);
-
-    assert(false);
-    // assert(dist_sq >= 0);
 
     if (dist_sq < BOID_VISUAL_RANGE_SQ)
     {
@@ -569,7 +566,7 @@ void init_animation_thread(animation_thread_state_t *state)
 {
   for (size_t i = state->first_boid; i < state->last_boid; i++)
   {
-    spawn_boid(&boids[i], i % 3);
+    spawn_boid(&boids[i], i % 2);
   }
 
   state->first_frame_start = time_us_32();
@@ -592,7 +589,7 @@ void update_animation_thread(animation_thread_state_t *state, int core)
     // erase boid
     drawRect(fix2int15(boid->position.x), fix2int15(boid->position.y), 1, 1, BLACK);
     // update boid's position and velocity
-    if (i % 2 == 0)
+    if (i % 4 == 0)
     {
       update_boid_motion(i);
     }
