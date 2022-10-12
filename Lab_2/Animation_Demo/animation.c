@@ -135,28 +135,25 @@ inline fix15 dot_vec2(vec2_t a, vec2_t b)
 
 fix15 norm_vec2(vec2_t a)
 {
-  // fix15 z_max, z_min;
-  // fix15 x = absfix15(a.x);
-  // fix15 y = absfix15(a.x);
+  fix15 z_max, z_min;
+  fix15 z_1 = absfix15(a.x);
+  fix15 z_2 = absfix15(a.y);
 
-  // if (x > y)
-  // {
-  //   z_max = x;
-  //   z_min = y;
-  // }
-  // else
-  // {
-  //   z_max = y;
-  //   z_min = x;
-  // }
+  if (z_1 > z_2)
+  {
+	  z_max = z_1;
+	  z_min = z_2;
+  }
+  else
+  {
+	  z_max = z_2;
+	  z_min = z_1;
+  }
 
-  // static const fix15 alpha = float2fix15(0.96043387);
-  // static const fix15 beta = float2fix15(0.3978247);
+  static const fix15 alpha = float2fix15(0.96043387);
+  static const fix15 beta = float2fix15(0.3978247);
 
-  // return multfix15(alpha, absfix15(z_max)) + multfix15(beta, absfix15(z_min));
-
-  fix15 norm_sq = dot_vec2(a, a);
-  return float2fix15(sqrtf(fix2float15(norm_sq)));
+  return ss_add_32(multfix15(alpha, absfix15(z_max)), multfix15(beta, absfix15(z_min)));
 }
 
 // squared distance between a and b
