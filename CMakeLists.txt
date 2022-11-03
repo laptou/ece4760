@@ -20,8 +20,10 @@ add_subdirectory(Lab_3)
 add_subdirectory(More_Demos)
 add_subdirectory(Stepper_Motors)
 add_subdirectory(VGA_Graphics)
+add_subdirectory(final_project)
 
 add_compile_options(-Wall
+        -Wpedantic
         -Wno-format          # int != int32_t as far as the compiler is concerned because gcc has int32_t as long int
         -Wno-unused-function # we have some for the docs that aren't called
         -Wno-maybe-uninitialized
