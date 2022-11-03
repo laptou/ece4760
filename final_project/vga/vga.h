@@ -21,28 +21,13 @@
  *
  */
 
-// Give the I/O pins that we're using some names that make sense - usable in main()
-enum vga_pins
-{
-  HSYNC = 16,
-  VSYNC,
-  RED_PIN,
-  GREEN_PIN,
-  BLUE_PIN
-};
+// Give the I/O pins that we're using some names that make sense - usable in
+// main()
+enum vga_pins { HSYNC = 16, VSYNC, RED_PIN, GREEN_PIN, BLUE_PIN };
 
-// We can only produce 8 (3-bit) colors, so let's give them readable names - usable in main()
-enum colors
-{
-  BLACK,
-  RED,
-  GREEN,
-  YELLOW,
-  BLUE,
-  MAGENTA,
-  CYAN,
-  WHITE
-};
+// We can only produce 8 (3-bit) colors, so let's give them readable names -
+// usable in main()
+enum colors { BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE };
 
 // VGA primitives - usable in main
 void vga_init(void);
@@ -53,10 +38,16 @@ void vga_line(short x0, short y0, short x1, short y1, char color);
 void vga_rect(short x, short y, short w, short h, char color);
 void vga_fill_circle(short x0, short y0, short r, char color);
 void vga_stroke_circle(short x0, short y0, short r, char color);
-void vga_fill_round_rect(short x, short y, short w, short h, short r, char color);
-void vga_stroke_round_rect(short x, short y, short w, short h, short r, char color);
+void vga_fill_round_rect(
+    short x, short y, short w, short h, short r, char color
+);
+void vga_stroke_round_rect(
+    short x, short y, short w, short h, short r, char color
+);
 void vga_fill_rect(short x, short y, short w, short h, char color);
-void vga_char(short x, short y, unsigned char c, char color, char bg, unsigned char size);
+void vga_char(
+    short x, short y, unsigned char c, char color, char bg, unsigned char size
+);
 void vga_cursor(short x, short y);
 void vga_fg_color(char c);
 void vga_bg_color(char c, char bg);
