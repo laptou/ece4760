@@ -72,8 +72,8 @@ typedef signed int fix15 ;
 #define ADCCLK 48000000.0
 
 // DMA channels for sampling ADC (VGA driver uses 0 and 1)
-int sample_chan = 2 ;
-int control_chan = 3 ;
+int fft_dma_sample_chan = 2 ;
+int fft_control_chan = 3 ;
 
 // Max and min macros
 #define max(a,b) ((a>b)?a:b)
@@ -83,7 +83,7 @@ int control_chan = 3 ;
 fix15 zero_point_4 = float2fix15(0.4) ;
 
 // Here's where we'll have the DMA channel put ADC samples
-uint8_t sample_array[NUM_SAMPLES] ;
+uint8_t fft_raw_sample_array[NUM_SAMPLES] ;
 // And here's where we'll copy those samples for FFT calculation
 fix15 fr[NUM_SAMPLES] ;
 fix15 fi[NUM_SAMPLES] ;
@@ -94,7 +94,7 @@ fix15 Sinewave[NUM_SAMPLES];
 fix15 window[NUM_SAMPLES]; 
 
 // Pointer to address of start of sample buffer
-uint8_t * sample_address_pointer = &sample_array[0] ;
+uint8_t * sample_address_pointer = &fft_raw_sample_array[0] ;
 
 // Peforms an in-place FFT. For more information about how this
 // algorithm works, please see https://vanhunteradams.com/FFT/FFT.html
@@ -190,7 +190,7 @@ static PT_THREAD (protothread_fft(struct pt *pt))
     PT_BEGIN(pt) ;
     printf("Starting capture\n") ;
     // Start the ADC channel
-    dma_start_channel_mask((1u << sample_chan)) ;
+    dma_start_channel_mask((1u << fft_dma_sample_chan)) ;
     // Start the ADC
     adc_run(true) ;
 
@@ -224,11 +224,11 @@ static PT_THREAD (protothread_fft(struct pt *pt))
     while(1) {
         // Wait for NUM_SAMPLES samples to be gathered
         // Measure wait time with timer. THIS IS BLOCKING
-        dma_channel_wait_for_finish_blocking(sample_chan);
+        dma_channel_wait_for_finish_blocking(fft_dma_sample_chan);
 
         // Copy/window elements into a fixed-point array
         for (i=0; i<NUM_SAMPLES; i++) {
-            fr[i] = multfix15(int2fix15((int)sample_array[i]), window[i]) ;
+            fr[i] = multfix15(int2fix15((int)fft_raw_sample_array[i]), window[i]) ;
             fi[i] = (fix15) 0 ;
         }
 
@@ -237,7 +237,7 @@ static PT_THREAD (protothread_fft(struct pt *pt))
         max_fr_dex = 0 ;
 
         // Restart the sample channel, now that we have our copy of the samples
-        dma_channel_start(control_chan) ;
+        dma_channel_start(fft_control_chan) ;
 
         // Compute the FFT
         FFTfix(fr, fi) ;
@@ -354,8 +354,8 @@ int main() {
     /////////////////////////////////////////////////////////////////////////////////
 
     // Channel configurations
-    dma_channel_config c2 = dma_channel_get_default_config(sample_chan);
-    dma_channel_config c3 = dma_channel_get_default_config(control_chan);
+    dma_channel_config c2 = dma_channel_get_default_config(fft_dma_sample_chan);
+    dma_channel_config c3 = dma_channel_get_default_config(fft_control_chan);
 
 
     // ADC SAMPLE CHANNEL
@@ -366,9 +366,9 @@ int main() {
     // Pace transfers based on availability of ADC samples
     channel_config_set_dreq(&c2, DREQ_ADC);
     // Configure the channel
-    dma_channel_configure(sample_chan,
+    dma_channel_configure(fft_dma_sample_chan,
         &c2,            // channel config
-        sample_array,   // dst
+        fft_raw_sample_array,   // dst
         &adc_hw->fifo,  // src
         NUM_SAMPLES,    // transfer count
         false            // don't start immediately
@@ -378,12 +378,12 @@ int main() {
     channel_config_set_transfer_data_size(&c3, DMA_SIZE_32);      // 32-bit txfers
     channel_config_set_read_increment(&c3, false);                // no read incrementing
     channel_config_set_write_increment(&c3, false);               // no write incrementing
-    channel_config_set_chain_to(&c3, sample_chan);                // chain to sample chan
+    channel_config_set_chain_to(&c3, fft_dma_sample_chan);                // chain to sample chan
 
     dma_channel_configure(
-        control_chan,                         // Channel to be configured
+        fft_control_chan,                         // Channel to be configured
         &c3,                                // The configuration we just created
-        &dma_hw->ch[sample_chan].write_addr,  // Write address (channel 0 read address)
+        &dma_hw->ch[fft_dma_sample_chan].write_addr,  // Write address (channel 0 read address)
         &sample_address_pointer,                   // Read address (POINTER TO AN ADDRESS)
         1,                                  // Number of transfers, in this case each is 4 byte
         false                               // Don't start immediately.

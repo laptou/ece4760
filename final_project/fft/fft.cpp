@@ -1,26 +1,24 @@
 #include "fft.h"
+#include "../fpmath/vecmath.h"
 
 // Include standard libraries
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
 // Include Pico libraries
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
-// Include hardware libraries
-#include "hardware/adc.h"
-#include "hardware/dma.h"
-#include "hardware/irq.h"
-#include "hardware/pio.h"
 
 void fft_init()
 {
   // Populate the sine table and Hann window table
   int ii;
   for (ii = 0; ii < NUM_SAMPLES; ii++) {
-    sine_lut[ii] = fixed::from(sinf(6.283f * ((float)ii) / (float)NUM_SAMPLES));
-    window[ii] = fixed::from(
+    fft_sine_lut[ii] =
+        fixed::from(sinf(6.283f * ((float)ii) / (float)NUM_SAMPLES));
+    fft_window_lut[ii] = fixed::from(
         0.5f * (1.0f - cosf(6.283 * ((float)ii) / ((float)NUM_SAMPLES)))
     );
   }
@@ -88,11 +86,11 @@ void fft_fix(fixed fr[], fixed fi[])
     // For each element in the FFT's that are being combined . . .
     for (m = 0; m < L; ++m) {
       // Lookup the trig values for that element
-      j = m << k;                         // index of the sine table
-      wr = sine_lut[j + NUM_SAMPLES / 4]; // cos(2pi m/N)
-      wi = -sine_lut[j];                  // sin(2pi m/N)
-      wr = wr >> 1;                       // divide by two
-      wi = wi >> 1;                       // divide by two
+      j = m << k;                             // index of the sine table
+      wr = fft_sine_lut[j + NUM_SAMPLES / 4]; // cos(2pi m/N)
+      wi = -fft_sine_lut[j];                  // sin(2pi m/N)
+      wr = wr >> 1;                           // divide by two
+      wi = wi >> 1;                           // divide by two
 
       // i gets the index of one of the FFT elements being combined
       for (i = m; i < NUM_SAMPLES; i += istep) {
@@ -117,4 +115,29 @@ void fft_fix(fixed fr[], fixed fi[])
     --k;
     L = istep;
   }
+}
+
+void fft_compute_magnitudes()
+{
+  auto max_magnitude = fixed::zero();
+  // Find the magnitudes (alpha max plus beta min)
+  for (size_t i = 0; i < (NUM_SAMPLES >> 1); i++) {
+    // get the approx magnitude
+    fft_sample_real[i] = fft_sample_real[i].abs();
+    fft_sample_imag[i] = fft_sample_imag[i].abs();
+
+    vec2 fft_sample = {fft_sample_real[i], fft_sample_imag[i]};
+
+    // reuse fr to hold magnitude
+    fft_sample_real[i] = fft_sample.norm_ambm();
+
+    // Keep track of maximum
+    if (fft_sample_real[i] > max_magnitude && i > 4) {
+      max_magnitude = fft_sample_real[i];
+      fft_max_freq_idx = i;
+    }
+  }
+
+  // Compute max frequency in Hz
+  fft_max_freq = fixed::from((int)fft_max_freq_idx) * fixed::from((float)(Fs / NUM_SAMPLES));
 }

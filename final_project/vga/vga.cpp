@@ -26,7 +26,7 @@
 // a pointer to the ADDRESS of this color array.
 // Note that this array is automatically initialized to all 0's (black)
 unsigned char vga_data_array[TXCOUNT];
-char *address_pointer = &vga_data_array[0];
+unsigned char *address_pointer = &vga_data_array[0];
 
 // Bit masks for drawPixel routine
 #define TOPMASK 0b11000111
@@ -561,7 +561,7 @@ inline void vga_set_bg_color(char c, char b)
 
 inline void vga_set_text_wrap(char w) { wrap = w; }
 
-void tft_write(unsigned char c)
+void vga_write_char(char c)
 {
   if (c == '\n') {
     cursor_y += textsize * 8;
@@ -583,13 +583,9 @@ void tft_write(unsigned char c)
   }
 }
 
-inline void writeString(char *str)
+inline void vga_write_string(char const *str)
 {
-  /* Print text onto screen
-   * Call tft_setCursor(), tft_setTextColor(), tft_setTextSize()
-   *  as necessary before printing
-   */
   while (*str) {
-    tft_write(*str++);
+    vga_write_char(*str++);
   }
 }

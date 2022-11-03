@@ -1,3 +1,6 @@
+#ifndef _FFT_H
+#define _FFT_H
+
 // Include standard libraries
 #include <math.h>
 #include <stdio.h>
@@ -10,8 +13,8 @@
 #include "../fpmath/fpmath.h"
 
 void fft_fix(fixed fr[], fixed fi[]);
+void fft_compute_magnitudes();
 void fft_init();
-
 
 /////////////////////////// ADC configuration ////////////////////////////////
 // ADC Channel and pin
@@ -31,27 +34,32 @@ void fft_init();
 #define ADCCLK 48000000.0
 
 // DMA channels for sampling ADC (VGA driver uses 0 and 1)
-int sample_chan = 2;
-int control_chan = 3;
+int fft_dma_sample_chan = 2;
+int fft_control_chan = 3;
 
 // Max and min macros
 #define max(a, b) ((a > b) ? a : b)
 #define min(a, b) ((a < b) ? a : b)
 
-// Absolute Value
-// 0.4 in fixed point (used for alpha max plus beta min)
-fixed zero_point_4 = fixed::from(0.4f);
-
 // Here's where we'll have the DMA channel put ADC samples
-uint8_t sample_array[NUM_SAMPLES];
+uint8_t fft_raw_sample_array[NUM_SAMPLES];
+
 // And here's where we'll copy those samples for FFT calculation
-fixed fr[NUM_SAMPLES];
-fixed fi[NUM_SAMPLES];
+fixed fft_sample_real[NUM_SAMPLES];
+fixed fft_sample_imag[NUM_SAMPLES];
 
 // Sine table for the FFT calculation
-fixed sine_lut[NUM_SAMPLES];
+fixed fft_sine_lut[NUM_SAMPLES];
+
 // Hann window table for FFT calculation
-fixed window[NUM_SAMPLES];
+fixed fft_window_lut[NUM_SAMPLES];
+
+// index in the sample array of the largest magnitude sample
+size_t fft_max_freq_idx;
+// frequency that has the largest measured magnitude
+fixed fft_max_freq;
 
 // Pointer to address of start of sample buffer
-uint8_t *sample_address_pointer = &sample_array[0];
+uint8_t *sample_address_pointer = &fft_raw_sample_array[0];
+
+#endif

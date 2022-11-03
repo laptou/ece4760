@@ -54,5 +54,5 @@ void vga_bg_color(char c, char bg);
 void vga_text_size(unsigned char s);
 void vga_text_wrap(char w);
 
-void tft_write(unsigned char c);
-void writeString(char *str);
+void vga_write_char(char c);
+void vga_write_string(char const *str);
