@@ -49,7 +49,7 @@ char textcolor, textbgcolor, wrap;
 #define _width 640
 #define _height 480
 
-void initVGA() {
+void vga_init() {
         // Choose which PIO instance to use (there are two instances, each with 4 state machines)
     PIO pio = pio0;
 
@@ -151,7 +151,7 @@ void initVGA() {
 // Note that because information is passed to the PIO state machines through
 // a DMA channel, we only need to modify the contents of the array and the
 // pixels will be automatically updated on the screen.
-void drawPixel(short x, short y, char color) {
+void vga_pixel(short x, short y, char color) {
     // Range checks (640x480 display)
     if (x > 639) x = 639 ;
     if (x < 0) x = 0 ;
@@ -172,20 +172,20 @@ void drawPixel(short x, short y, char color) {
     }
 }
 
-void drawVLine(short x, short y, short h, char color) {
+void vga_vline(short x, short y, short h, char color) {
     for (short i=y; i<(y+h); i++) {
-        drawPixel(x, i, color) ;
+        vga_pixel(x, i, color) ;
     }
 }
 
-void drawHLine(short x, short y, short w, char color) {
+void vga_hline(short x, short y, short w, char color) {
     for (short i=x; i<(x+w); i++) {
-        drawPixel(i, y, color) ;
+        vga_pixel(i, y, color) ;
     }
 }
 
 // Bresenham's algorithm - thx wikipedia and thx Bruce!
-void drawLine(short x0, short y0, short x1, short y1, char color) {
+void vga_line(short x0, short y0, short x1, short y1, char color) {
 /* Draw a straight line from (x0,y0) to (x1,y1) with given color
  * Parameters:
  *      x0: x-coordinate of starting point of line. The x-coordinate of
@@ -224,9 +224,9 @@ void drawLine(short x0, short y0, short x1, short y1, char color) {
 
       for (; x0<=x1; x0++) {
         if (steep) {
-          drawPixel(y0, x0, color);
+          vga_pixel(y0, x0, color);
         } else {
-          drawPixel(x0, y0, color);
+          vga_pixel(x0, y0, color);
         }
         err -= dy;
         if (err < 0) {
@@ -237,7 +237,7 @@ void drawLine(short x0, short y0, short x1, short y1, char color) {
 }
 
 // Draw a rectangle
-void drawRect(short x, short y, short w, short h, char color) {
+void vga_stroke_rect(short x, short y, short w, short h, char color) {
 /* Draw a rectangle outline with top left vertex (x,y), width w
  * and height h at given color
  * Parameters:
@@ -250,13 +250,13 @@ void drawRect(short x, short y, short w, short h, char color) {
  *      color:  16-bit color of the rectangle outline
  * Returns: Nothing
  */
-  drawHLine(x, y, w, color);
-  drawHLine(x, y+h-1, w, color);
-  drawVLine(x, y, h, color);
-  drawVLine(x+w-1, y, h, color);
+  vga_hline(x, y, w, color);
+  vga_hline(x, y+h-1, w, color);
+  vga_vline(x, y, h, color);
+  vga_vline(x+w-1, y, h, color);
 }
 
-void drawCircle(short x0, short y0, short r, char color) {
+void vga_stroke_circle(short x0, short y0, short r, char color) {
 /* Draw a circle outline with center (x0,y0) and radius r, with given color
  * Parameters:
  *      x0: x-coordinate of center of circle. The top-left of the screen
@@ -274,10 +274,10 @@ void drawCircle(short x0, short y0, short r, char color) {
   short x = 0;
   short y = r;
 
-  drawPixel(x0  , y0+r, color);
-  drawPixel(x0  , y0-r, color);
-  drawPixel(x0+r, y0  , color);
-  drawPixel(x0-r, y0  , color);
+  vga_pixel(x0  , y0+r, color);
+  vga_pixel(x0  , y0-r, color);
+  vga_pixel(x0+r, y0  , color);
+  vga_pixel(x0-r, y0  , color);
 
   while (x<y) {
     if (f >= 0) {
@@ -289,18 +289,18 @@ void drawCircle(short x0, short y0, short r, char color) {
     ddF_x += 2;
     f += ddF_x;
 
-    drawPixel(x0 + x, y0 + y, color);
-    drawPixel(x0 - x, y0 + y, color);
-    drawPixel(x0 + x, y0 - y, color);
-    drawPixel(x0 - x, y0 - y, color);
-    drawPixel(x0 + y, y0 + x, color);
-    drawPixel(x0 - y, y0 + x, color);
-    drawPixel(x0 + y, y0 - x, color);
-    drawPixel(x0 - y, y0 - x, color);
+    vga_pixel(x0 + x, y0 + y, color);
+    vga_pixel(x0 - x, y0 + y, color);
+    vga_pixel(x0 + x, y0 - y, color);
+    vga_pixel(x0 - x, y0 - y, color);
+    vga_pixel(x0 + y, y0 + x, color);
+    vga_pixel(x0 - y, y0 + x, color);
+    vga_pixel(x0 + y, y0 - x, color);
+    vga_pixel(x0 - y, y0 - x, color);
   }
 }
 
-void drawCircleHelper( short x0, short y0, short r, unsigned char cornername, char color) {
+void vga_stroke_circle_helper( short x0, short y0, short r, unsigned char cornername, char color) {
 // Helper function for drawing circles and circular objects
   short f     = 1 - r;
   short ddF_x = 1;
@@ -318,40 +318,26 @@ void drawCircleHelper( short x0, short y0, short r, unsigned char cornername, ch
     ddF_x += 2;
     f     += ddF_x;
     if (cornername & 0x4) {
-      drawPixel(x0 + x, y0 + y, color);
-      drawPixel(x0 + y, y0 + x, color);
+      vga_pixel(x0 + x, y0 + y, color);
+      vga_pixel(x0 + y, y0 + x, color);
     }
     if (cornername & 0x2) {
-      drawPixel(x0 + x, y0 - y, color);
-      drawPixel(x0 + y, y0 - x, color);
+      vga_pixel(x0 + x, y0 - y, color);
+      vga_pixel(x0 + y, y0 - x, color);
     }
     if (cornername & 0x8) {
-      drawPixel(x0 - y, y0 + x, color);
-      drawPixel(x0 - x, y0 + y, color);
+      vga_pixel(x0 - y, y0 + x, color);
+      vga_pixel(x0 - x, y0 + y, color);
     }
     if (cornername & 0x1) {
-      drawPixel(x0 - y, y0 - x, color);
-      drawPixel(x0 - x, y0 - y, color);
+      vga_pixel(x0 - y, y0 - x, color);
+      vga_pixel(x0 - x, y0 - y, color);
     }
   }
 }
 
-void fillCircle(short x0, short y0, short r, char color) {
-/* Draw a filled circle with center (x0,y0) and radius r, with given color
- * Parameters:
- *      x0: x-coordinate of center of circle. The top-left of the screen
- *          has x-coordinate 0 and increases to the right
- *      y0: y-coordinate of center of circle. The top-left of the screen
- *          has y-coordinate 0 and increases to the bottom
- *      r:  radius of circle
- *      color: 16-bit color value for the circle
- * Returns: Nothing
- */
-  drawVLine(x0, y0-r, 2*r+1, color);
-  fillCircleHelper(x0, y0, r, 3, 0, color);
-}
 
-void fillCircleHelper(short x0, short y0, short r, unsigned char cornername, short delta, char color) {
+void vga_fill_circle_helper(short x0, short y0, short r, unsigned char cornername, short delta, char color) {
 // Helper function for drawing filled circles
   short f     = 1 - r;
   short ddF_x = 1;
@@ -370,18 +356,33 @@ void fillCircleHelper(short x0, short y0, short r, unsigned char cornername, sho
     f     += ddF_x;
 
     if (cornername & 0x1) {
-      drawVLine(x0+x, y0-y, 2*y+1+delta, color);
-      drawVLine(x0+y, y0-x, 2*x+1+delta, color);
+      vga_vline(x0+x, y0-y, 2*y+1+delta, color);
+      vga_vline(x0+y, y0-x, 2*x+1+delta, color);
     }
     if (cornername & 0x2) {
-      drawVLine(x0-x, y0-y, 2*y+1+delta, color);
-      drawVLine(x0-y, y0-x, 2*x+1+delta, color);
+      vga_vline(x0-x, y0-y, 2*y+1+delta, color);
+      vga_vline(x0-y, y0-x, 2*x+1+delta, color);
     }
   }
 }
 
+void vga_circle(short x0, short y0, short r, char color) {
+/* Draw a filled circle with center (x0,y0) and radius r, with given color
+ * Parameters:
+ *      x0: x-coordinate of center of circle. The top-left of the screen
+ *          has x-coordinate 0 and increases to the right
+ *      y0: y-coordinate of center of circle. The top-left of the screen
+ *          has y-coordinate 0 and increases to the bottom
+ *      r:  radius of circle
+ *      color: 16-bit color value for the circle
+ * Returns: Nothing
+ */
+  vga_vline(x0, y0-r, 2*r+1, color);
+  vga_fill_circle_helper(x0, y0, r, 3, 0, color);
+}
+
 // Draw a rounded rectangle
-void drawRoundRect(short x, short y, short w, short h, short r, char color) {
+void vga_stroke_round_rect(short x, short y, short w, short h, short r, char color) {
 /* Draw a rounded rectangle outline with top left vertex (x,y), width w,
  * height h and radius of curvature r at given color
  * Parameters:
@@ -395,30 +396,30 @@ void drawRoundRect(short x, short y, short w, short h, short r, char color) {
  * Returns: Nothing
  */
   // smarter version
-  drawHLine(x+r  , y    , w-2*r, color); // Top
-  drawHLine(x+r  , y+h-1, w-2*r, color); // Bottom
-  drawVLine(x    , y+r  , h-2*r, color); // Left
-  drawVLine(x+w-1, y+r  , h-2*r, color); // Right
+  vga_hline(x+r  , y    , w-2*r, color); // Top
+  vga_hline(x+r  , y+h-1, w-2*r, color); // Bottom
+  vga_vline(x    , y+r  , h-2*r, color); // Left
+  vga_vline(x+w-1, y+r  , h-2*r, color); // Right
   // draw four corners
-  drawCircleHelper(x+r    , y+r    , r, 1, color);
-  drawCircleHelper(x+w-r-1, y+r    , r, 2, color);
-  drawCircleHelper(x+w-r-1, y+h-r-1, r, 4, color);
-  drawCircleHelper(x+r    , y+h-r-1, r, 8, color);
+  vga_stroke_circle_helper(x+r    , y+r    , r, 1, color);
+  vga_stroke_circle_helper(x+w-r-1, y+r    , r, 2, color);
+  vga_stroke_circle_helper(x+w-r-1, y+h-r-1, r, 4, color);
+  vga_stroke_circle_helper(x+r    , y+h-r-1, r, 8, color);
 }
 
 // Fill a rounded rectangle
 void fillRoundRect(short x, short y, short w, short h, short r, char color) {
   // smarter version
-  fillRect(x+r, y, w-2*r, h, color);
+  vga_fill_rect(x+r, y, w-2*r, h, color);
 
   // draw four corners
-  fillCircleHelper(x+w-r-1, y+r, r, 1, h-2*r-1, color);
-  fillCircleHelper(x+r    , y+r, r, 2, h-2*r-1, color);
+  vga_fill_circle_helper(x+w-r-1, y+r, r, 1, h-2*r-1, color);
+  vga_fill_circle_helper(x+r    , y+r, r, 2, h-2*r-1, color);
 }
 
 
 // fill a rectangle
-void fillRect(short x, short y, short w, short h, char color) {
+void vga_fill_rect(short x, short y, short w, short h, char color) {
 /* Draw a filled rectangle with starting top-left vertex (x,y),
  *  width w and height h with given color
  * Parameters:
@@ -441,13 +442,13 @@ void fillRect(short x, short y, short w, short h, char color) {
 
   for(int i=x; i<(x+w); i++) {
     for(int j=y; j<(y+h); j++) {
-        drawPixel(i, j, color);
+        vga_pixel(i, j, color);
     }
   }
 }
 
 // Draw a character
-void drawChar(short x, short y, unsigned char c, char color, char bg, unsigned char size) {
+void vga_char(short x, short y, unsigned char c, char color, char bg, unsigned char size) {
     char i, j;
   if((x >= _width)            || // Clip right
      (y >= _height)           || // Clip bottom
@@ -464,15 +465,15 @@ void drawChar(short x, short y, unsigned char c, char color, char bg, unsigned c
     for ( j = 0; j<8; j++) {
       if (line & 0x1) {
         if (size == 1) // default size
-          drawPixel(x+i, y+j, color);
+          vga_pixel(x+i, y+j, color);
         else {  // big size
-          fillRect(x+(i*size), y+(j*size), size, size, color);
+          vga_fill_rect(x+(i*size), y+(j*size), size, size, color);
         }
       } else if (bg != color) {
         if (size == 1) // default size
-          drawPixel(x+i, y+j, bg);
+          vga_pixel(x+i, y+j, bg);
         else {  // big size
-          fillRect(x+i*size, y+j*size, size, size, bg);
+          vga_fill_rect(x+i*size, y+j*size, size, size, bg);
         }
       }
       line >>= 1;
@@ -492,7 +493,7 @@ inline void setCursor(short x, short y) {
   cursor_y = y;
 }
 
-inline void setTextSize(unsigned char s) {
+inline void vga_set_font_size(unsigned char s) {
 /*Set size of text to be displayed
  * Parameters:
  *      s = text size (1 being smallest)
@@ -501,13 +502,13 @@ inline void setTextSize(unsigned char s) {
   textsize = (s > 0) ? s : 1;
 }
 
-inline void setTextColor(char c) {
+inline void vga_set_fg_color(char c) {
   // For 'transparent' background, we'll set the bg
   // to the same as fg instead of using a flag
   textcolor = textbgcolor = c;
 }
 
-inline void setTextColor2(char c, char b) {
+inline void vga_set_bg_color(char c, char b) {
 /* Set color of text to be displayed
  * Parameters:
  *      c = 16-bit color of text
@@ -517,7 +518,7 @@ inline void setTextColor2(char c, char b) {
   textbgcolor = b;
 }
 
-inline void setTextWrap(char w) {
+inline void vga_set_text_wrap(char w) {
   wrap = w;
 }
 
@@ -534,7 +535,7 @@ void tft_write(unsigned char c){
           cursor_x = new_x;
       }
   } else {
-    drawChar(cursor_x, cursor_y, c, textcolor, textbgcolor, textsize);
+    vga_char(cursor_x, cursor_y, c, textcolor, textbgcolor, textsize);
     cursor_x += textsize*6;
     if (wrap && (cursor_x > (_width - textsize*6))) {
       cursor_y += textsize*8;

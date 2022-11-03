@@ -1,6 +1,6 @@
 /**
  * Hunter Adams (vha3@cornell.edu)
- * 
+ *
  *
  * HARDWARE CONNECTIONS
  *  - GPIO 16 ---> VGA Hsync
@@ -21,32 +21,47 @@
  *
  */
 
-
 // Give the I/O pins that we're using some names that make sense - usable in main()
-enum vga_pins {HSYNC=16, VSYNC, RED_PIN, GREEN_PIN, BLUE_PIN} ;
+enum vga_pins
+{
+  HSYNC = 16,
+  VSYNC,
+  RED_PIN,
+  GREEN_PIN,
+  BLUE_PIN
+};
 
 // We can only produce 8 (3-bit) colors, so let's give them readable names - usable in main()
-enum colors {BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE} ;
+enum colors
+{
+  BLACK,
+  RED,
+  GREEN,
+  YELLOW,
+  BLUE,
+  MAGENTA,
+  CYAN,
+  WHITE
+};
 
 // VGA primitives - usable in main
-void initVGA(void) ;
-void drawPixel(short x, short y, char color) ;
-void drawVLine(short x, short y, short h, char color) ;
-void drawHLine(short x, short y, short w, char color) ;
-void drawLine(short x0, short y0, short x1, short y1, char color) ;
-void drawRect(short x, short y, short w, short h, char color);
-void drawCircle(short x0, short y0, short r, char color) ;
-void drawCircleHelper( short x0, short y0, short r, unsigned char cornername, char color) ;
-void fillCircle(short x0, short y0, short r, char color) ;
-void fillCircleHelper(short x0, short y0, short r, unsigned char cornername, short delta, char color) ;
-void drawRoundRect(short x, short y, short w, short h, short r, char color) ;
-void fillRoundRect(short x, short y, short w, short h, short r, char color) ;
-void fillRect(short x, short y, short w, short h, char color) ;
-void drawChar(short x, short y, unsigned char c, char color, char bg, unsigned char size) ;
-void setCursor(short x, short y);
-void setTextColor(char c);
-void setTextColor2(char c, char bg);
-void setTextSize(unsigned char s);
-void setTextWrap(char w);
-void tft_write(unsigned char c) ;
-void writeString(char* str) ;
+void vga_init(void);
+void vga_pixel(short x, short y, char color);
+void vga_vline(short x, short y, short h, char color);
+void vga_hline(short x, short y, short w, char color);
+void vga_line(short x0, short y0, short x1, short y1, char color);
+void vga_rect(short x, short y, short w, short h, char color);
+void vga_fill_circle(short x0, short y0, short r, char color);
+void vga_stroke_circle(short x0, short y0, short r, char color);
+void vga_fill_round_rect(short x, short y, short w, short h, short r, char color);
+void vga_stroke_round_rect(short x, short y, short w, short h, short r, char color);
+void vga_fill_rect(short x, short y, short w, short h, char color);
+void vga_char(short x, short y, unsigned char c, char color, char bg, unsigned char size);
+void vga_cursor(short x, short y);
+void vga_fg_color(char c);
+void vga_bg_color(char c, char bg);
+void vga_text_size(unsigned char s);
+void vga_text_wrap(char w);
+
+void tft_write(unsigned char c);
+void writeString(char *str);
