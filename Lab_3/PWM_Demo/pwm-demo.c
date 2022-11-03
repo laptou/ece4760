@@ -32,17 +32,17 @@
 uint slice_num ;
 
 // PWM duty cycle
-volatile int control ;
-volatile int old_control ;
+volatile int pwm_out ;
+volatile int pwm_out_prev ;
 
 // PWM interrupt service routine
 void on_pwm_wrap() {
     // Clear the interrupt flag that brought us here
     pwm_clear_irq(pwm_gpio_to_slice_num(5));
     // Update duty cycle
-    if (control!=old_control) {
-        old_control = control ;
-        pwm_set_chan_level(slice_num, PWM_CHAN_B, control);
+    if (pwm_out!=pwm_out_prev) {
+        pwm_out_prev = pwm_out ;
+        pwm_set_chan_level(slice_num, PWM_CHAN_B, pwm_out);
     }
 }
 
@@ -60,7 +60,7 @@ static PT_THREAD (protothread_serial(struct pt *pt))
         sscanf(pt_serial_in_buffer,"%d", &test_in) ;
         if (test_in > 5000) continue ;
         else if (test_in < 0) continue ;
-        else control = test_in ;
+        else pwm_out = test_in ;
     }
     PT_END(pt) ;
 }
