@@ -6,7 +6,7 @@ pico_generate_pio_header(final_project ${CMAKE_CURRENT_LIST_DIR}/vga/vsync.pio)
 pico_generate_pio_header(final_project ${CMAKE_CURRENT_LIST_DIR}/vga/rgb.pio)
 
 # must match with executable name and source file names
-target_sources(final_project PRIVATE main.c vga/vga.c)
+target_sources(final_project PRIVATE main.c vga/vga.c fft/fft.cpp fpmath/fpmath.cpp)
 
 # must match with executable name
 target_link_libraries(final_project PRIVATE pico_stdlib pico_multicore pico_bootsel_via_double_reset hardware_pio hardware_dma hardware_adc hardware_irq)
