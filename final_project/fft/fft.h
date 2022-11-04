@@ -34,32 +34,28 @@ void fft_init();
 #define ADCCLK 48000000.0
 
 // DMA channels for sampling ADC (VGA driver uses 0 and 1)
-int fft_dma_sample_chan = 2;
-int fft_control_chan = 3;
-
-// Max and min macros
-#define max(a, b) ((a > b) ? a : b)
-#define min(a, b) ((a < b) ? a : b)
+#define FFT_DMA_SAMPLE_CHAN 2
+#define FFT_DMA_CONTROL_CHAN 3
 
 // Here's where we'll have the DMA channel put ADC samples
-uint8_t fft_raw_sample_array[NUM_SAMPLES];
+extern uint8_t fft_raw_sample_array[NUM_SAMPLES];
 
 // And here's where we'll copy those samples for FFT calculation
-fixed fft_sample_real[NUM_SAMPLES];
-fixed fft_sample_imag[NUM_SAMPLES];
+extern fixed fft_sample_real[NUM_SAMPLES];
+extern fixed fft_sample_imag[NUM_SAMPLES];
 
 // Sine table for the FFT calculation
-fixed fft_sine_lut[NUM_SAMPLES];
+extern fixed fft_sine_lut[NUM_SAMPLES];
 
 // Hann window table for FFT calculation
-fixed fft_window_lut[NUM_SAMPLES];
+extern fixed fft_window_lut[NUM_SAMPLES];
 
 // index in the sample array of the largest magnitude sample
-size_t fft_max_freq_idx;
+extern size_t fft_max_freq_idx;
 // frequency that has the largest measured magnitude
-fixed fft_max_freq;
+extern fixed fft_max_freq;
 
 // Pointer to address of start of sample buffer
-uint8_t *sample_address_pointer = &fft_raw_sample_array[0];
+extern uint8_t *sample_address_pointer;
 
 #endif

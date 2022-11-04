@@ -11,6 +11,31 @@
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
 
+// Include hardware libraries
+#include "hardware/adc.h"
+#include "hardware/dma.h"
+
+// Here's where we'll have the DMA channel put ADC samples
+uint8_t fft_raw_sample_array[NUM_SAMPLES];
+
+// And here's where we'll copy those samples for FFT calculation
+fixed fft_sample_real[NUM_SAMPLES];
+fixed fft_sample_imag[NUM_SAMPLES];
+
+// Sine table for the FFT calculation
+fixed fft_sine_lut[NUM_SAMPLES];
+
+// Hann window table for FFT calculation
+fixed fft_window_lut[NUM_SAMPLES];
+
+// index in the sample array of the largest magnitude sample
+size_t fft_max_freq_idx;
+// frequency that has the largest measured magnitude
+fixed fft_max_freq;
+
+// Pointer to address of start of sample buffer
+uint8_t *sample_address_pointer = &fft_raw_sample_array[0];
+
 void fft_init()
 {
   // Populate the sine table and Hann window table
@@ -22,6 +47,11 @@ void fft_init()
         0.5f * (1.0f - cosf(6.283 * ((float)ii) / ((float)NUM_SAMPLES)))
     );
   }
+
+  // Start the ADC DMA channel
+  dma_start_channel_mask((1u << FFT_DMA_SAMPLE_CHAN));
+  // Start the ADC
+  adc_run(true);
 }
 
 // Peforms an in-place FFT. For more information about how this
@@ -139,5 +169,6 @@ void fft_compute_magnitudes()
   }
 
   // Compute max frequency in Hz
-  fft_max_freq = fixed::from((int)fft_max_freq_idx) * fixed::from((float)(Fs / NUM_SAMPLES));
+  fft_max_freq = fixed::from((int)fft_max_freq_idx) *
+                 fixed::from((float)(Fs / NUM_SAMPLES));
 }

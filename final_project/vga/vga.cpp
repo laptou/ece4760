@@ -1,3 +1,6 @@
+
+// Header file
+#include "vga.h"
 #include "hardware/dma.h"
 #include "hardware/pio.h"
 #include "pico/stdlib.h"
@@ -8,8 +11,6 @@
 #include "hsync.pio.h"
 #include "rgb.pio.h"
 #include "vsync.pio.h"
-// Header file
-#include "vga.h"
 // Font file
 #include "glcdfont.c"
 
@@ -442,7 +443,7 @@ void vga_stroke_round_rect(
 }
 
 // Fill a rounded rectangle
-void fillRoundRect(short x, short y, short w, short h, short r, char color)
+void vga_fill_round_rect(short x, short y, short w, short h, short r, char color)
 {
   // smarter version
   vga_fill_rect(x + r, y, w - 2 * r, h, color);
@@ -519,7 +520,7 @@ void vga_char(
   }
 }
 
-inline void setCursor(short x, short y)
+void vga_cursor(short x, short y)
 {
   /* Set cursor for text to be printed
    * Parameters:
@@ -531,7 +532,7 @@ inline void setCursor(short x, short y)
   cursor_y = y;
 }
 
-inline void vga_set_font_size(unsigned char s)
+void vga_text_size(unsigned char s)
 {
   /*Set size of text to be displayed
    * Parameters:
@@ -541,14 +542,14 @@ inline void vga_set_font_size(unsigned char s)
   textsize = (s > 0) ? s : 1;
 }
 
-inline void vga_set_fg_color(char c)
+void vga_fg_color(char c)
 {
   // For 'transparent' background, we'll set the bg
   // to the same as fg instead of using a flag
   textcolor = textbgcolor = c;
 }
 
-inline void vga_set_bg_color(char c, char b)
+void vga_bg_color(char c, char b)
 {
   /* Set color of text to be displayed
    * Parameters:
@@ -559,7 +560,7 @@ inline void vga_set_bg_color(char c, char b)
   textbgcolor = b;
 }
 
-inline void vga_set_text_wrap(char w) { wrap = w; }
+void vga_text_wrap(char w) { wrap = w; }
 
 void vga_write_char(char c)
 {
@@ -583,7 +584,7 @@ void vga_write_char(char c)
   }
 }
 
-inline void vga_write_string(char const *str)
+void vga_write_string(char const *str)
 {
   while (*str) {
     vga_write_char(*str++);

@@ -50,15 +50,12 @@ static PT_THREAD(protothread_fft(struct pt *pt))
 
   printf("starting fft capture\n");
 
-  // Start the ADC DMA channel
-  dma_start_channel_mask((1u << fft_dma_sample_chan));
-  // Start the ADC
-  adc_run(true);
+  fft_init();
 
   while (1) {
     // Wait for NUM_SAMPLES samples to be gathered
     // Measure wait time with timer. THIS IS BLOCKING
-    dma_channel_wait_for_finish_blocking(fft_dma_sample_chan);
+    dma_channel_wait_for_finish_blocking(FFT_DMA_SAMPLE_CHAN);
 
     // Copy/window elements into a fixed-point array
     for (size_t i = 0; i < NUM_SAMPLES; i++) {
@@ -68,7 +65,7 @@ static PT_THREAD(protothread_fft(struct pt *pt))
     }
 
     // Restart the sample channel, now that we have our copy of the samples
-    dma_channel_start(fft_control_chan);
+    dma_channel_start(FFT_DMA_CONTROL_CHAN);
 
     // Compute the FFT
     fft_fix(fft_sample_real, fft_sample_imag);
@@ -162,8 +159,8 @@ int main()
   /////////////////////////////////////////////////////////////////////////////////
 
   // Channel configurations
-  dma_channel_config c2 = dma_channel_get_default_config(fft_dma_sample_chan);
-  dma_channel_config c3 = dma_channel_get_default_config(fft_control_chan);
+  dma_channel_config c2 = dma_channel_get_default_config(FFT_DMA_SAMPLE_CHAN);
+  dma_channel_config c3 = dma_channel_get_default_config(FFT_DMA_CONTROL_CHAN);
 
   // ADC SAMPLE CHANNEL
   // Reading from constant address, writing to incrementing byte addresses
@@ -174,7 +171,7 @@ int main()
   channel_config_set_dreq(&c2, DREQ_ADC);
   // Configure the channel
   dma_channel_configure(
-      fft_dma_sample_chan,
+      FFT_DMA_SAMPLE_CHAN,
       &c2,                  // channel config
       fft_raw_sample_array, // dst
       &adc_hw->fifo,        // src
@@ -186,12 +183,12 @@ int main()
   channel_config_set_transfer_data_size(&c3, DMA_SIZE_32); // 32-bit txfers
   channel_config_set_read_increment(&c3, false);  // no read incrementing
   channel_config_set_write_increment(&c3, false); // no write incrementing
-  channel_config_set_chain_to(&c3, fft_dma_sample_chan); // chain to sample chan
+  channel_config_set_chain_to(&c3, FFT_DMA_SAMPLE_CHAN); // chain to sample chan
 
   dma_channel_configure(
-      fft_control_chan, // Channel to be configured
+      FFT_DMA_CONTROL_CHAN, // Channel to be configured
       &c3,              // The configuration we just created
-      &dma_hw->ch[fft_dma_sample_chan]
+      &dma_hw->ch[FFT_DMA_SAMPLE_CHAN]
            .write_addr,        // Write address (channel 0 read address)
       &sample_address_pointer, // Read address (POINTER TO AN ADDRESS)
       1,    // Number of transfers, in this case each is 4 byte
