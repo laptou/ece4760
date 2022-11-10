@@ -49,10 +49,9 @@ static PT_THREAD(protothread_fft(struct pt *pt))
   PT_BEGIN(pt);
 
   printf("starting fft capture\n");
-
-  fft_init();
   sprintf(pt_serial_out_buffer, "fft_init\n");
   serial_write;
+  fft_init();
 
   while (1)
   {
@@ -125,7 +124,7 @@ static PT_THREAD(protothread_vga(struct pt *pt))
 static PT_THREAD(protothread_serial(struct pt *pt))
 {
   PT_BEGIN(pt);
-  sprintf(pt_serial_out_buffer, "Protothreads RP2040 v1.0\n\r");
+  sprintf(pt_serial_out_buffer, "Protothreads RP2040 v1.0\n");
   serial_write;
   static char freqtext[40];
   while (1)
