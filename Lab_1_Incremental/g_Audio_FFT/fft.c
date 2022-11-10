@@ -846,7 +846,7 @@ void core1_entry()
                                       repeating_timer_callback_core_1, NULL, &timer_core_1);
 
     // Add thread to core 1
-    pt_add_thread(protothread_core_1);
+    // pt_add_thread(protothread_core_1);
 
     // Add and schedule threads
     // pt_add_thread(protothread_blink);
@@ -933,6 +933,13 @@ int main()
         window[ii] = float2fix15(0.5 * (1.0 - cos(6.283 * ((float)ii) / ((float)NUM_SAMPLES))));
     }
 
+    printf("hann lut:\n");
+
+    for (size_t i = 0; i < 10; i++)
+    {
+        printf("%f ", (float)window[i]);
+    }
+
 #pragma endregion
 
 #pragma region ADC DMA config
@@ -951,26 +958,26 @@ int main()
     channel_config_set_dreq(&c2, DREQ_ADC);
     // Configure the channel
     dma_channel_configure(fft_dma_sample_chan,
-                          &c2,           // channel config
-                          fft_raw_sample_array,  // dst
-                          &adc_hw->fifo, // src
-                          NUM_SAMPLES,   // transfer count
-                          false          // don't start immediately
+                          &c2,                  // channel config
+                          fft_raw_sample_array, // dst
+                          &adc_hw->fifo,        // src
+                          NUM_SAMPLES,          // transfer count
+                          false                 // don't start immediately
     );
 
     // CONTROL CHANNEL
     channel_config_set_transfer_data_size(&c3, DMA_SIZE_32); // 32-bit txfers
     channel_config_set_read_increment(&c3, false);           // no read incrementing
     channel_config_set_write_increment(&c3, false);          // no write incrementing
-    channel_config_set_chain_to(&c3, fft_dma_sample_chan);           // chain to sample chan
+    channel_config_set_chain_to(&c3, fft_dma_sample_chan);   // chain to sample chan
 
     dma_channel_configure(
-        fft_control_chan,                        // Channel to be configured
-        &c3,                                 // The configuration we just created
+        fft_control_chan,                            // Channel to be configured
+        &c3,                                         // The configuration we just created
         &dma_hw->ch[fft_dma_sample_chan].write_addr, // Write address (channel 0 read address)
-        &sample_address_pointer,             // Read address (POINTER TO AN ADDRESS)
-        1,                                   // Number of transfers, in this case each is 4 byte
-        false                                // Don't start immediately.
+        &sample_address_pointer,                     // Read address (POINTER TO AN ADDRESS)
+        1,                                           // Number of transfers, in this case each is 4 byte
+        false                                        // Don't start immediately.
     );
 
 #pragma endregion
@@ -1047,7 +1054,7 @@ int main()
     pt_add_thread(protothread_fft);
 
     // Add core 0 threads
-    pt_add_thread(protothread_core_0);
+    // pt_add_thread(protothread_core_0);
 
     printf("initializing core 0 thread scheduler\n");
 

@@ -3,7 +3,8 @@
 #ifndef _VECMATH_H
 #define _VECMATH_H
 
-typedef struct vec2 {
+typedef struct vec2
+{
   fixed x;
   fixed y;
 
@@ -16,16 +17,21 @@ typedef struct vec2 {
     fixed z_max;
     fixed z_min;
 
-    if (this->x > this->y) {
-      z_max = this->x;
-      z_min = this->y;
-    } else {
+    fixed z_1 = this->x.abs();
+    fixed z_2 = this->y.abs();
 
-      z_min = this->x;
-      z_max = this->y;
+    if (z_1 > z_2)
+    {
+      z_max = z_1;
+      z_min = z_2;
+    }
+    else
+    {
+      z_max = z_2;
+      z_min = z_1;
     }
 
-    return alpha * z_max.abs() + beta + z_min.abs();
+    return alpha * z_max + beta * z_min;
   }
 } vec2;
 

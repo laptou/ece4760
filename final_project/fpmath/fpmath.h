@@ -1,10 +1,12 @@
 #ifndef _FPMATH_H
 #define _FPMATH_H
 
-typedef struct fixed {
+typedef struct fixed
+{
   signed int value;
-  
-  constexpr static fixed from(float f) { return {(signed int)(f * 32768.0)}; }
+
+  constexpr static fixed from(double f) { return {(signed int)(f * 32768.0)}; }
+  constexpr static fixed from(float f) { return {(signed int)(f * 32768.0f)}; }
   constexpr static fixed from(signed int i) { return {(i << 15)}; }
   constexpr static fixed zero() { return {0}; }
 

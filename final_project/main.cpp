@@ -36,11 +36,14 @@
 #include "hardware/dma.h"
 #include "hardware/irq.h"
 #include "hardware/pio.h"
+#include "hardware/sync.h"
 #include "pt_cornell_rp2040_v1.h"
 #include "vga/vga.h"
 #include "fft/fft.h"
 #include "fpmath/fpmath.h"
 #include "fpmath/vecmath.h"
+
+spin_lock_t *fft_data_lock;
 
 // FFT thread
 static PT_THREAD(protothread_fft(struct pt *pt))
@@ -49,17 +52,14 @@ static PT_THREAD(protothread_fft(struct pt *pt))
   PT_BEGIN(pt);
 
   printf("starting fft capture\n");
-  sprintf(pt_serial_out_buffer, "fft_init\n");
-  serial_write;
-  fft_init();
 
   while (1)
   {
-    // sprintf(pt_serial_out_buffer, "fft\n");
-    serial_write;
     // Wait for NUM_SAMPLES samples to be gathered
     // Measure wait time with timer. THIS IS BLOCKING
     dma_channel_wait_for_finish_blocking(FFT_DMA_SAMPLE_CHAN);
+
+    PT_LOCK_WAIT(pt, fft_data_lock);
 
     // Copy/window elements into a fixed-point array
     for (size_t i = 0; i < NUM_SAMPLES; i++)
@@ -75,6 +75,14 @@ static PT_THREAD(protothread_fft(struct pt *pt))
     // Compute the FFT
     fft_fix(fft_sample_real, fft_sample_imag);
     fft_compute_magnitudes();
+
+    // Unlock spinlock
+    PT_LOCK_RELEASE(fft_data_lock);
+
+    // A short delay to make sure the other core locks before this
+    // one locks the spinlock again (experimentation shows that
+    // this is necessary)
+    sleep_ms(1);
   }
 
   PT_END(pt);
@@ -84,8 +92,6 @@ static PT_THREAD(protothread_vga(struct pt *pt))
 {
   PT_BEGIN(pt);
 
-  // sprintf(pt_serial_out_buffer, "vga\n");
-  // serial_write;
   vga_fg_color(WHITE);
   vga_cursor(65, 0);
   vga_text_size(1);
@@ -103,19 +109,26 @@ static PT_THREAD(protothread_vga(struct pt *pt))
   // Will be used to write dynamic text to screen
   static char freqtext[40];
 
-  // Display on VGA
-  vga_fill_rect(250, 20, 176, 30, BLACK); // red box
-  sprintf(freqtext, "%d", int(fft_max_freq));
-  vga_cursor(250, 20);
-  vga_text_size(2);
-  vga_write_string(freqtext);
-
-  // Update the FFT display
-  for (int i = 5; i < (NUM_SAMPLES >> 1); i++)
+  while (1)
   {
-    vga_vline(59 + i, 50, 429, BLACK);
-    auto height = int((fft_sample_real[i] * fixed::from(36)));
-    vga_vline(59 + i, 479 - height, height, WHITE);
+    PT_LOCK_WAIT(pt, fft_data_lock);
+
+    // Display on VGA
+    vga_fill_rect(250, 20, 176, 30, BLACK); // red box
+    sprintf(freqtext, "%d", (int)fft_max_freq);
+    vga_cursor(250, 20);
+    vga_text_size(2);
+    vga_write_string(freqtext);
+
+    // Update the FFT display
+    for (int i = 5; i < (NUM_SAMPLES >> 1); i++)
+    {
+      vga_vline(59 + i, 50, 429, BLACK);
+      auto height = (int)(fft_sample_real[i] * fixed::from(36));
+      vga_vline(59 + i, 479 - height, height, WHITE);
+    }
+
+    PT_LOCK_RELEASE(fft_data_lock);
   }
 
   PT_END(pt);
@@ -124,20 +137,34 @@ static PT_THREAD(protothread_vga(struct pt *pt))
 static PT_THREAD(protothread_serial(struct pt *pt))
 {
   PT_BEGIN(pt);
-  sprintf(pt_serial_out_buffer, "Protothreads RP2040 v1.0\n");
-  serial_write;
-  static char freqtext[40];
+
+  printf("rp2040 recorder keyboard v0.1\n");
+  static char classifier;
+
   while (1)
   {
-    sprintf(pt_serial_out_buffer, "freq:");
-    serial_write;
-    sprintf(freqtext, "%d", int(fft_max_freq));
-    sprintf(pt_serial_out_buffer, freqtext);
-    serial_write;
-    // non-blocking write
+    // spawn a thread to do the non-blocking serial read
+    serial_read;
+    // convert input string to number
+    sscanf(pt_serial_in_buffer, "%c", &classifier);
+
+    if (classifier == 'f')
+    {
+      sprintf(pt_serial_out_buffer, "freq: %d\n", int(fft_max_freq));
+      serial_write;
+    }
   }
+
   PT_END(pt);
 }
+
+// Entry point for core 1
+void core1_entry()
+{
+  pt_add_thread(protothread_vga);
+  pt_schedule_start;
+}
+
 int main()
 {
   // Initialize stdio
@@ -219,11 +246,15 @@ int main()
       false                    // Don't start immediately.
   );
 
-  // Launch core 1
+  // Claim and initialize a spinlock
+  PT_LOCK_INIT(fft_data_lock, 26, UNLOCKED);
+  fft_init();
+
+  // start core 1
+  multicore_reset_core1();
+  multicore_launch_core1(core1_entry);
 
   // Add and schedule core 0 threads
-
-  pt_add_thread(protothread_vga);
   pt_add_thread(protothread_serial);
   pt_add_thread(protothread_fft);
   pt_schedule_start;
