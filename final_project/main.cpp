@@ -51,7 +51,26 @@ static PT_THREAD(protothread_fft(struct pt *pt))
   // Indicate beginning of thread
   PT_BEGIN(pt);
 
+  fft_init();
+
   printf("starting fft capture\n");
+
+  // vga_fg_color(WHITE);
+  // vga_cursor(65, 0);
+  // vga_text_size(1);
+  // vga_write_string("Raspberry Pi Pico");
+  // vga_cursor(65, 10);
+  // vga_write_string("FFT demo");
+  // vga_cursor(65, 20);
+  // vga_write_string("Hunter Adams");
+  // vga_cursor(65, 30);
+  // vga_write_string("vha3@cornell.edu");
+  // vga_cursor(250, 0);
+  // vga_text_size(2);
+  // vga_write_string("Max freqency:");
+
+  // Will be used to write dynamic text to screen
+  static char freqtext[40];
 
   while (1)
   {
@@ -59,7 +78,7 @@ static PT_THREAD(protothread_fft(struct pt *pt))
     // Measure wait time with timer. THIS IS BLOCKING
     dma_channel_wait_for_finish_blocking(FFT_DMA_SAMPLE_CHAN);
 
-    PT_LOCK_WAIT(pt, fft_data_lock);
+    // PT_LOCK_WAIT(pt, fft_data_lock);
 
     // Copy/window elements into a fixed-point array
     for (size_t i = 0; i < NUM_SAMPLES; i++)
@@ -76,13 +95,28 @@ static PT_THREAD(protothread_fft(struct pt *pt))
     fft_fix(fft_sample_real, fft_sample_imag);
     fft_compute_magnitudes();
 
+    // // Display on VGA
+    // vga_fill_rect(250, 20, 176, 30, BLACK); // red box
+    // sprintf(freqtext, "%d", (int)fft_max_freq);
+    // vga_cursor(250, 20);
+    // vga_text_size(2);
+    // vga_write_string(freqtext);
+
+    // // Update the FFT display
+    // for (int i = 5; i < (NUM_SAMPLES >> 1); i++)
+    // {
+    //   vga_vline(59 + i, 50, 429, BLACK);
+    //   auto height = (int)(fft_sample_real[i] * fixed::from(36));
+    //   vga_vline(59 + i, 479 - height, height, WHITE);
+    // }
+
     // Unlock spinlock
-    PT_LOCK_RELEASE(fft_data_lock);
+    // PT_LOCK_RELEASE(fft_data_lock);
 
     // A short delay to make sure the other core locks before this
     // one locks the spinlock again (experimentation shows that
     // this is necessary)
-    sleep_ms(1);
+    // sleep_ms(1);
   }
 
   PT_END(pt);
@@ -111,13 +145,12 @@ static PT_THREAD(protothread_vga(struct pt *pt))
 
   while (1)
   {
-    PT_LOCK_WAIT(pt, fft_data_lock);
+    // PT_LOCK_WAIT(pt, fft_data_lock);
 
     // Display on VGA
     vga_fill_rect(250, 20, 176, 30, BLACK); // red box
     sprintf(freqtext, "%d", (int)fft_max_freq);
     vga_cursor(250, 20);
-    vga_text_size(2);
     vga_write_string(freqtext);
 
     // Update the FFT display
@@ -128,7 +161,7 @@ static PT_THREAD(protothread_vga(struct pt *pt))
       vga_vline(59 + i, 479 - height, height, WHITE);
     }
 
-    PT_LOCK_RELEASE(fft_data_lock);
+    // PT_LOCK_RELEASE(fft_data_lock);
   }
 
   PT_END(pt);
@@ -143,16 +176,20 @@ static PT_THREAD(protothread_serial(struct pt *pt))
 
   while (1)
   {
-    // spawn a thread to do the non-blocking serial read
-    serial_read;
-    // convert input string to number
-    sscanf(pt_serial_in_buffer, "%c", &classifier);
+    PT_YIELD_usec(100000);
+    // printf("freq: %d\n", (int)fft_max_freq);
+    sprintf(pt_serial_out_buffer, "freq: %d\n", int(fft_max_freq));
+    serial_write;
+    // // spawn a thread to do the non-blocking serial read
+    // serial_read;
+    // // convert input string to number
+    // sscanf(pt_serial_in_buffer, "%c", &classifier);
 
-    if (classifier == 'f')
-    {
-      sprintf(pt_serial_out_buffer, "freq: %d\n", int(fft_max_freq));
-      serial_write;
-    }
+    // if (classifier == 'f')
+    // {
+    //   sprintf(pt_serial_out_buffer, "freq: %d\n", int(fft_max_freq));
+    //   serial_write;
+    // }
   }
 
   PT_END(pt);
@@ -161,7 +198,7 @@ static PT_THREAD(protothread_serial(struct pt *pt))
 // Entry point for core 1
 void core1_entry()
 {
-  pt_add_thread(protothread_vga);
+  // pt_add_thread(protothread_vga);
   pt_schedule_start;
 }
 
@@ -171,7 +208,7 @@ int main()
   stdio_init_all();
 
   // Initialize the VGA screen
-  vga_init();
+  // vga_init();
 
   ///////////////////////////////////////////////////////////////////////////////
   // ============================== ADC CONFIGURATION ==========================
@@ -248,7 +285,6 @@ int main()
 
   // Claim and initialize a spinlock
   PT_LOCK_INIT(fft_data_lock, 26, UNLOCKED);
-  fft_init();
 
   // start core 1
   multicore_reset_core1();
