@@ -51,14 +51,20 @@ static PT_THREAD(protothread_fft(struct pt *pt))
   printf("starting fft capture\n");
 
   fft_init();
+  sprintf(pt_serial_out_buffer, "fft_init\n");
+  serial_write;
 
-  while (1) {
+  while (1)
+  {
+    // sprintf(pt_serial_out_buffer, "fft\n");
+    serial_write;
     // Wait for NUM_SAMPLES samples to be gathered
     // Measure wait time with timer. THIS IS BLOCKING
     dma_channel_wait_for_finish_blocking(FFT_DMA_SAMPLE_CHAN);
 
     // Copy/window elements into a fixed-point array
-    for (size_t i = 0; i < NUM_SAMPLES; i++) {
+    for (size_t i = 0; i < NUM_SAMPLES; i++)
+    {
       fft_sample_real[i] =
           fixed::from((int)fft_raw_sample_array[i]) * fft_window_lut[i];
       fft_sample_imag[i] = fixed::zero();
@@ -78,6 +84,9 @@ static PT_THREAD(protothread_fft(struct pt *pt))
 static PT_THREAD(protothread_vga(struct pt *pt))
 {
   PT_BEGIN(pt);
+
+  // sprintf(pt_serial_out_buffer, "vga\n");
+  // serial_write;
   vga_fg_color(WHITE);
   vga_cursor(65, 0);
   vga_text_size(1);
@@ -97,23 +106,39 @@ static PT_THREAD(protothread_vga(struct pt *pt))
 
   // Display on VGA
   vga_fill_rect(250, 20, 176, 30, BLACK); // red box
-  sprintf(freqtext, "%d", (int)fft_max_freq);
+  sprintf(freqtext, "%d", int(fft_max_freq));
   vga_cursor(250, 20);
   vga_text_size(2);
   vga_write_string(freqtext);
 
   // Update the FFT display
-  for (int i = 5; i < (NUM_SAMPLES >> 1); i++) {
+  for (int i = 5; i < (NUM_SAMPLES >> 1); i++)
+  {
     vga_vline(59 + i, 50, 429, BLACK);
-    auto height = (int)(fft_sample_real[i] * fixed::from(36));
+    auto height = int((fft_sample_real[i] * fixed::from(36)));
     vga_vline(59 + i, 479 - height, height, WHITE);
   }
 
   PT_END(pt);
 }
 
-
-
+static PT_THREAD(protothread_serial(struct pt *pt))
+{
+  PT_BEGIN(pt);
+  sprintf(pt_serial_out_buffer, "Protothreads RP2040 v1.0\n\r");
+  serial_write;
+  static char freqtext[40];
+  while (1)
+  {
+    sprintf(pt_serial_out_buffer, "freq:");
+    serial_write;
+    sprintf(freqtext, "%d", int(fft_max_freq));
+    sprintf(pt_serial_out_buffer, freqtext);
+    serial_write;
+    // non-blocking write
+  }
+  PT_END(pt);
+}
 int main()
 {
   // Initialize stdio
@@ -181,24 +206,26 @@ int main()
 
   // CONTROL CHANNEL
   channel_config_set_transfer_data_size(&c3, DMA_SIZE_32); // 32-bit txfers
-  channel_config_set_read_increment(&c3, false);  // no read incrementing
-  channel_config_set_write_increment(&c3, false); // no write incrementing
-  channel_config_set_chain_to(&c3, FFT_DMA_SAMPLE_CHAN); // chain to sample chan
+  channel_config_set_read_increment(&c3, false);           // no read incrementing
+  channel_config_set_write_increment(&c3, false);          // no write incrementing
+  channel_config_set_chain_to(&c3, FFT_DMA_SAMPLE_CHAN);   // chain to sample chan
 
   dma_channel_configure(
       FFT_DMA_CONTROL_CHAN, // Channel to be configured
-      &c3,              // The configuration we just created
+      &c3,                  // The configuration we just created
       &dma_hw->ch[FFT_DMA_SAMPLE_CHAN]
            .write_addr,        // Write address (channel 0 read address)
       &sample_address_pointer, // Read address (POINTER TO AN ADDRESS)
-      1,    // Number of transfers, in this case each is 4 byte
-      false // Don't start immediately.
+      1,                       // Number of transfers, in this case each is 4 byte
+      false                    // Don't start immediately.
   );
 
   // Launch core 1
 
   // Add and schedule core 0 threads
-  pt_add_thread(protothread_fft);
+
   pt_add_thread(protothread_vga);
+  pt_add_thread(protothread_serial);
+  pt_add_thread(protothread_fft);
   pt_schedule_start;
 }
