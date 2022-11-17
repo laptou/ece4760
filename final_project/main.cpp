@@ -55,20 +55,6 @@ static PT_THREAD(protothread_fft(struct pt *pt))
 
   printf("starting fft capture\n");
 
-  // vga_fg_color(WHITE);
-  // vga_cursor(65, 0);
-  // vga_text_size(1);
-  // vga_write_string("Raspberry Pi Pico");
-  // vga_cursor(65, 10);
-  // vga_write_string("FFT demo");
-  // vga_cursor(65, 20);
-  // vga_write_string("Hunter Adams");
-  // vga_cursor(65, 30);
-  // vga_write_string("vha3@cornell.edu");
-  // vga_cursor(250, 0);
-  // vga_text_size(2);
-  // vga_write_string("Max freqency:");
-
   // Will be used to write dynamic text to screen
   static char freqtext[40];
 
@@ -94,21 +80,6 @@ static PT_THREAD(protothread_fft(struct pt *pt))
     // Compute the FFT
     fft_fix(fft_sample_real, fft_sample_imag);
     fft_compute_magnitudes();
-
-    // // Display on VGA
-    // vga_fill_rect(250, 20, 176, 30, BLACK); // red box
-    // sprintf(freqtext, "%d", (int)fft_max_freq);
-    // vga_cursor(250, 20);
-    // vga_text_size(2);
-    // vga_write_string(freqtext);
-
-    // // Update the FFT display
-    // for (int i = 5; i < (NUM_SAMPLES >> 1); i++)
-    // {
-    //   vga_vline(59 + i, 50, 429, BLACK);
-    //   auto height = (int)(fft_sample_real[i] * fixed::from(36));
-    //   vga_vline(59 + i, 479 - height, height, WHITE);
-    // }
 
     // Unlock spinlock
     PT_LOCK_RELEASE(fft_data_lock);
@@ -177,19 +148,8 @@ static PT_THREAD(protothread_serial(struct pt *pt))
   while (1)
   {
     PT_YIELD_usec(100000);
-    // printf("freq: %d\n", (int)fft_max_freq);
     sprintf(pt_serial_out_buffer, "freq: %d\n", int(fft_max_freq));
     serial_write;
-    // // spawn a thread to do the non-blocking serial read
-    // serial_read;
-    // // convert input string to number
-    // sscanf(pt_serial_in_buffer, "%c", &classifier);
-
-    // if (classifier == 'f')
-    // {
-    //   sprintf(pt_serial_out_buffer, "freq: %d\n", int(fft_max_freq));
-    //   serial_write;
-    // }
   }
 
   PT_END(pt);
@@ -291,7 +251,7 @@ int main()
   multicore_launch_core1(core1_entry);
 
   // Add and schedule core 0 threads
-  // pt_add_thread(protothread_serial);
+  pt_add_thread(protothread_serial);
   pt_add_thread(protothread_fft);
   pt_schedule_start;
 }
