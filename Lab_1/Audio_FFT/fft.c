@@ -71,6 +71,10 @@ typedef signed int fix15;
 // ADC clock rate (unmutable!)
 #define ADCCLK 48000000.0
 
+static volatile float max_freqency;
+int notelist[] = {523, 554, 587, 622, 659, 698, 739, 783, 830, 880, 932, 987, 1046, 1108, 1174, 1244, 1318, 1396, 1479, 1567, 1661, 1760, 1864, 1975, 2093};
+int notelist_n = sizeof(notelist) / sizeof(notelist[0]);
+
 // DMA channels for sampling ADC (VGA driver uses 0 and 1)
 int fft_dma_sample_chan = 2;
 int fft_control_chan = 3;
@@ -189,6 +193,71 @@ void FFTfix(fix15 fr[], fix15 fi[])
     }
 }
 
+int getClosest(int, int, int);
+
+// Returns element closest to target in arr[]
+int findClosest(int arr[], int n, int target)
+{
+    // Corner cases
+    // left-side case
+    if (target <= arr[0])
+        return arr[0];
+    // right-side case
+    if (target >= arr[n - 1])
+        return arr[n - 1];
+
+    // Doing binary search
+    int i = 0, j = n, mid = 0;
+    while (i < j)
+    {
+        mid = (i + j) / 2;
+
+        if (arr[mid] == target)
+            return arr[mid];
+
+        /* If target is less than array element,
+            then search in left */
+        if (target < arr[mid])
+        {
+
+            // If target is greater than previous
+            // to mid, return closest of two
+            if (mid > 0 && target > arr[mid - 1])
+                return getClosest(arr[mid - 1],
+                                  arr[mid], target);
+            j = mid;
+        }
+        /* Repeat for left half */
+
+        // If target is greater than mid
+        else
+        {
+            if (mid < n - 1 && target < arr[mid + 1])
+                return getClosest(arr[mid],
+                                  arr[mid + 1], target);
+            // update i
+            i = mid + 1;
+        }
+    }
+
+    // Only single element left after search
+    return arr[mid];
+}
+
+// Method to compare which one is the more close.
+// We find the closest by taking the difference
+// between the target and both values. It assumes
+// that val2 is greater than val1 and target lies
+// between these two.
+int getClosest(int val1, int val2,
+               int target)
+{
+    if (target - val1 >= val2 - target)
+        return val2;
+    else
+        return val1;
+}
+
 // Runs on core 0
 static PT_THREAD(protothread_fft(struct pt *pt))
 {
@@ -201,12 +270,96 @@ static PT_THREAD(protothread_fft(struct pt *pt))
     adc_run(true);
 
     // Declare some static variables
-    static int height;         // for scaling display
-    static float max_freqency; // holds max frequency
-    static int i;              // incrementing loop variable
+    static int height; // for scaling display
+                       // static float max_freqency; // holds max frequency
+    static int i;      // incrementing loop variable
 
     static fix15 max_fr;   // temporary variable for max freq calculation
     static int max_fr_dex; // index of max frequency
+    static char notetext[40];
+    void freq_to_note(float f)
+    {
+        int close = findClosest(notelist, notelist_n, (int)f);
+        switch (close)
+        {
+        case 523:
+            sprintf(notetext, "C5");
+            break;
+        case 554:
+            sprintf(notetext, "C#5");
+            break;
+        case 587:
+            sprintf(notetext, "D5");
+            break;
+        case 622:
+            sprintf(notetext, "D#5");
+            break;
+        case 659:
+            sprintf(notetext, "E5");
+            break;
+        case 698:
+            sprintf(notetext, "F5");
+            break;
+        case 739:
+            sprintf(notetext, "F#5");
+            break;
+        case 783:
+            sprintf(notetext, "G5");
+            break;
+        case 830:
+            sprintf(notetext, "G#5");
+            break;
+        case 880:
+            sprintf(notetext, "A5");
+            break;
+        case 932:
+            sprintf(notetext, "A#5");
+            break;
+        case 987:
+            sprintf(notetext, "B5");
+            break;
+        case 1046:
+            sprintf(notetext, "C6");
+            break;
+        case 1108:
+            sprintf(notetext, "C#6");
+            break;
+        case 1174:
+            sprintf(notetext, "D6");
+            break;
+        case 1244:
+            sprintf(notetext, "D#6");
+            break;
+        case 1318:
+            sprintf(notetext, "E6");
+            break;
+        case 1396:
+            sprintf(notetext, "F6");
+            break;
+        case 1479:
+            sprintf(notetext, "F#6");
+            break;
+        case 1567:
+            sprintf(notetext, "G6");
+            break;
+        case 1661:
+            sprintf(notetext, "G#6");
+            break;
+        case 1760:
+            sprintf(notetext, "A6");
+            break;
+        case 1864:
+            sprintf(notetext, "A#6");
+            break;
+        case 1975:
+            sprintf(notetext, "B6");
+            break;
+        case 2093:
+            sprintf(notetext, "C7");
+            break;
+        }
+    }
+    //[523,587,622,659,698,739,783,830,880,932,987,1046,1108,1174,1244,1318,1396,1479,1567,1661,1760,1864,1975,2093];
 
     // Write some text to VGA
     setTextColor(WHITE);
@@ -268,13 +421,16 @@ static PT_THREAD(protothread_fft(struct pt *pt))
         }
         // Compute max frequency in Hz
         max_freqency = max_fr_dex * (Fs / NUM_SAMPLES);
+        freq_to_note(max_freqency);
 
         // Display on VGA
-        fillRect(250, 20, 176, 30, BLACK); // red box
+        fillRect(250, 20, 176, 40, BLACK); // red box
         sprintf(freqtext, "%d", (int)max_freqency);
         setCursor(250, 20);
         setTextSize(2);
         writeString(freqtext);
+        setCursor(250, 30);
+        writeString(notetext);
 
         // Update the FFT display
         for (int i = 5; i < (NUM_SAMPLES >> 1); i++)
@@ -284,6 +440,34 @@ static PT_THREAD(protothread_fft(struct pt *pt))
             drawVLine(59 + i, 479 - height, height, WHITE);
         }
     }
+    PT_END(pt);
+}
+
+static PT_THREAD(protothread_serial(struct pt *pt))
+{
+    PT_BEGIN(pt);
+
+    printf("rp2040 recorder keyboard v0.1\n");
+    static char classifier;
+
+    while (1)
+    {
+        PT_YIELD_usec(100000);
+        // printf("freq: %d\n", (int)fft_max_freq);
+        sprintf(pt_serial_out_buffer, "freq: %d\n", (int)(max_freqency));
+        serial_write;
+        // // spawn a thread to do the non-blocking serial read
+        // serial_read;
+        // // convert input string to number
+        // sscanf(pt_serial_in_buffer, "%c", &classifier);
+
+        // if (classifier == 'f')
+        // {
+        //   sprintf(pt_serial_out_buffer, "freq: %d\n", int(fft_max_freq));
+        //   serial_write;
+        // }
+    }
+
     PT_END(pt);
 }
 
@@ -304,7 +488,8 @@ static PT_THREAD(protothread_blink(struct pt *pt))
 void core1_entry()
 {
     // Add and schedule threads
-    pt_add_thread(protothread_blink);
+    // pt_add_thread(protothread_blink);
+    pt_add_thread(protothread_serial);
     pt_schedule_start;
 }
 
