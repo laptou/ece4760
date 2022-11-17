@@ -78,7 +78,7 @@ static PT_THREAD(protothread_fft(struct pt *pt))
     // Measure wait time with timer. THIS IS BLOCKING
     dma_channel_wait_for_finish_blocking(FFT_DMA_SAMPLE_CHAN);
 
-    // PT_LOCK_WAIT(pt, fft_data_lock);
+    PT_LOCK_WAIT(pt, fft_data_lock);
 
     // Copy/window elements into a fixed-point array
     for (size_t i = 0; i < NUM_SAMPLES; i++)
@@ -111,12 +111,12 @@ static PT_THREAD(protothread_fft(struct pt *pt))
     // }
 
     // Unlock spinlock
-    // PT_LOCK_RELEASE(fft_data_lock);
+    PT_LOCK_RELEASE(fft_data_lock);
 
     // A short delay to make sure the other core locks before this
     // one locks the spinlock again (experimentation shows that
     // this is necessary)
-    // sleep_ms(1);
+    sleep_ms(1);
   }
 
   PT_END(pt);
@@ -145,7 +145,7 @@ static PT_THREAD(protothread_vga(struct pt *pt))
 
   while (1)
   {
-    // PT_LOCK_WAIT(pt, fft_data_lock);
+    PT_LOCK_WAIT(pt, fft_data_lock);
 
     // Display on VGA
     vga_fill_rect(250, 20, 176, 30, BLACK); // red box
@@ -161,7 +161,7 @@ static PT_THREAD(protothread_vga(struct pt *pt))
       vga_vline(59 + i, 479 - height, height, WHITE);
     }
 
-    // PT_LOCK_RELEASE(fft_data_lock);
+    PT_LOCK_RELEASE(fft_data_lock);
   }
 
   PT_END(pt);
@@ -198,7 +198,7 @@ static PT_THREAD(protothread_serial(struct pt *pt))
 // Entry point for core 1
 void core1_entry()
 {
-  // pt_add_thread(protothread_vga);
+  pt_add_thread(protothread_vga);
   pt_schedule_start;
 }
 
@@ -208,7 +208,7 @@ int main()
   stdio_init_all();
 
   // Initialize the VGA screen
-  // vga_init();
+  vga_init();
 
   ///////////////////////////////////////////////////////////////////////////////
   // ============================== ADC CONFIGURATION ==========================
@@ -291,7 +291,7 @@ int main()
   multicore_launch_core1(core1_entry);
 
   // Add and schedule core 0 threads
-  pt_add_thread(protothread_serial);
+  // pt_add_thread(protothread_serial);
   pt_add_thread(protothread_fft);
   pt_schedule_start;
 }

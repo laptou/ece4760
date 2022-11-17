@@ -133,7 +133,7 @@ void fft_fix(fixed fr[], fixed fi[])
         // tr = multfix15(wr, fr[j]) - multfix15(wi, fi[j]) ;
         // ti = multfix15(wr, fi[j]) + multfix15(wi, fr[j]) ;
         tr = wr * fr[j] - wi * fi[j];
-        ti = wr * fr[j] + wi * fi[j];
+        ti = wr * fi[j] + wi * fr[j];
 
         // divide ith index elements by two (top half of above matrix)
         qr = fr[i] >> 1;
