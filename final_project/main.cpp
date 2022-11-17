@@ -42,6 +42,7 @@
 #include "fft/fft.h"
 #include "fpmath/fpmath.h"
 #include "fpmath/vecmath.h"
+#include "notes.h"
 
 spin_lock_t *fft_data_lock;
 
@@ -98,15 +99,6 @@ static PT_THREAD(protothread_vga(struct pt *pt))
   PT_BEGIN(pt);
 
   vga_fg_color(WHITE);
-  vga_cursor(65, 0);
-  vga_text_size(1);
-  vga_write_string("Raspberry Pi Pico");
-  vga_cursor(65, 10);
-  vga_write_string("FFT demo");
-  vga_cursor(65, 20);
-  vga_write_string("Hunter Adams");
-  vga_cursor(65, 30);
-  vga_write_string("vha3@cornell.edu");
   vga_cursor(250, 0);
   vga_text_size(2);
   vga_write_string("Max freqency:");
@@ -120,7 +112,8 @@ static PT_THREAD(protothread_vga(struct pt *pt))
 
     // Display on VGA
     vga_fill_rect(250, 20, 176, 30, BLACK); // red box
-    sprintf(freqtext, "%d", (int)fft_max_freq);
+    auto note = find_closest_note(fft_max_freq);
+    sprintf(freqtext, "%d (%s)", (int)fft_max_freq, note.name.c_str());
     vga_cursor(250, 20);
     vga_write_string(freqtext);
 
