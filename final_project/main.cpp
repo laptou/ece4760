@@ -42,6 +42,7 @@
 #include "fft/fft.h"
 #include "fpmath/fpmath.h"
 #include "fpmath/vecmath.h"
+#include "keyboard/keyboard.h"
 #include "notes.h"
 
 spin_lock_t *fft_data_lock;
@@ -148,10 +149,26 @@ static PT_THREAD(protothread_serial(struct pt *pt))
   PT_END(pt);
 }
 
+static PT_THREAD(protothread_usb(struct pt *pt))
+{
+  PT_BEGIN(pt);
+
+  keyboard::init();
+
+  while (1)
+  {
+    keyboard::task();
+    PT_YIELD_usec(10000);
+  }
+
+  PT_END(pt);
+}
+
 // Entry point for core 1
 void core1_entry()
 {
   pt_add_thread(protothread_vga);
+  pt_add_thread(protothread_usb);
   pt_schedule_start;
 }
 
