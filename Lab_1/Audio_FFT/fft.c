@@ -72,7 +72,7 @@ typedef signed int fix15;
 #define ADCCLK 48000000.0
 
 static volatile float max_freqency;
-int notelist[] = {523, 554, 587, 622, 659, 698, 739, 783, 830, 880, 932, 987, 1046, 1108, 1174, 1244, 1318, 1396, 1479, 1567, 1661, 1760, 1864, 1975, 2093};
+int notelist[] = {493, 523, 554, 587, 622, 659, 698, 739, 783, 830, 880, 932, 987, 1046, 1108, 1174, 1244, 1318, 1396, 1479, 1567, 1661, 1760, 1864, 1975, 2093, 2217};
 int notelist_n = sizeof(notelist) / sizeof(notelist[0]);
 
 // DMA channels for sampling ADC (VGA driver uses 0 and 1)
@@ -282,6 +282,9 @@ static PT_THREAD(protothread_fft(struct pt *pt))
         int close = findClosest(notelist, notelist_n, (int)f);
         switch (close)
         {
+        case 493:
+            sprintf(notetext, "LOWER THAN C5");
+            break;
         case 523:
             sprintf(notetext, "C5");
             break;
@@ -356,6 +359,9 @@ static PT_THREAD(protothread_fft(struct pt *pt))
             break;
         case 2093:
             sprintf(notetext, "C7");
+            break;
+        case 2217:
+            sprintf(notetext, "HIGHER THAN C7");
             break;
         }
     }
