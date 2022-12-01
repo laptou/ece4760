@@ -47,7 +47,7 @@
 #include "notes.h"
 
 spin_lock_t *fft_data_lock;
-const note *current_note;
+const absolute_note *current_note;
 
 // FFT thread
 static PT_THREAD(protothread_fft(struct pt *pt))
@@ -116,7 +116,7 @@ static PT_THREAD(protothread_vga(struct pt *pt))
 
     // Display on VGA
     vga_fill_rect(250, 20, 176, 30, BLACK); // red box
-    std::string name = current_note->name;
+    std::string name = current_note->str();
     sprintf(freqtext, "%d (%s)", (int)fft_max_freq, name.c_str());
     vga_cursor(250, 20);
     vga_write_string(freqtext);

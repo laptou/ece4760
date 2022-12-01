@@ -1,36 +1,36 @@
 #include "notes.h"
 
-note notelist[] = {
-    {fixed::from(493), "<C5"},
-    {fixed::from(523), "C5"},
-    {fixed::from(554), "C#5"},
-    {fixed::from(587), "D5"},
-    {fixed::from(622), "D#5"},
-    {fixed::from(659), "E5"},
-    {fixed::from(698), "F5"},
-    {fixed::from(739), "F#5"},
-    {fixed::from(783), "G5"},
-    {fixed::from(830), "G#5"},
-    {fixed::from(880), "A5"},
-    {fixed::from(932), "A#5"},
-    {fixed::from(987), "B5"},
-    {fixed::from(1046), "C6"},
-    {fixed::from(1108), "C#6"},
-    {fixed::from(1174), "D6"},
-    {fixed::from(1244), "D#6"},
-    {fixed::from(1318), "E6"},
-    {fixed::from(1396), "F6"},
-    {fixed::from(1479), "F#6"},
-    {fixed::from(1567), "G6"},
-    {fixed::from(1661), "G#6"},
-    {fixed::from(1760), "A6"},
-    {fixed::from(1864), "A#6"},
-    {fixed::from(1975), "B6"},
-    {fixed::from(2093), "C7"},
-    {fixed::from(2217), ">C7"}};
+absolute_note notelist[] = {
+    {fixed::from(493), 4, note::B, false},
+    {fixed::from(523), 5, note::C, false},
+    {fixed::from(554), 5, note::C, true},
+    {fixed::from(587), 5, note::D, false},
+    {fixed::from(622), 5, note::D, true},
+    {fixed::from(659), 5, note::E, false},
+    {fixed::from(698), 5, note::F, false},
+    {fixed::from(739), 5, note::F, true},
+    {fixed::from(783), 5, note::G, false},
+    {fixed::from(830), 5, note::G, true},
+    {fixed::from(880), 5, note::A, false},
+    {fixed::from(932), 5, note::A, true},
+    {fixed::from(987), 5, note::B, false},
+    {fixed::from(1046), 6, note::C, false},
+    {fixed::from(1108), 6, note::C, true},
+    {fixed::from(1174), 6, note::D, false},
+    {fixed::from(1244), 6, note::D, true},
+    {fixed::from(1318), 6, note::E, false},
+    {fixed::from(1396), 6, note::F, false},
+    {fixed::from(1479), 6, note::F, true},
+    {fixed::from(1567), 6, note::G, false},
+    {fixed::from(1661), 6, note::G, true},
+    {fixed::from(1760), 6, note::A, false},
+    {fixed::from(1864), 6, note::A, true},
+    {fixed::from(1975), 6, note::B, false},
+    {fixed::from(2093), 7, note::C, false},
+    {fixed::from(2217), 7, note::C, true}};
 
-// Returns the closest note to freq between lhs and rhs.
-const note &get_closest_note(const note &lhs, const note &rhs, fixed freq)
+// Returns the closest absolute_note to freq between lhs and rhs.
+const absolute_note &get_closest_note(const absolute_note &lhs, const absolute_note &rhs, fixed freq)
 {
   if (freq - lhs.freq >= rhs.freq - freq)
     return rhs;
@@ -39,7 +39,7 @@ const note &get_closest_note(const note &lhs, const note &rhs, fixed freq)
 }
 
 // Returns element closest to target in arr[]
-const note &find_closest_note(fixed freq)
+const absolute_note &find_closest_note(fixed freq)
 {
   auto arr = notelist;
   auto n = sizeof(notelist) / sizeof(notelist[0]);

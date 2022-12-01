@@ -11,7 +11,7 @@
 namespace keyboard
 {
   void init();
-  void task(const note *current_note);
+  void task(const absolute_note *current_note);
 }
 
 #endif

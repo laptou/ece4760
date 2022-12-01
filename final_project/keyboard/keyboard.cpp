@@ -2,8 +2,8 @@
 #include "../fft/fft.h"
 #include "../notes.h"
 
-static void send_hid_report(uint8_t report_id, uint32_t btn, const note *current_note);
-void hid_task(const note *current_note);
+static void send_hid_report(uint8_t report_id, uint32_t btn, const absolute_note *current_note);
+void hid_task(const absolute_note *current_note);
 
 namespace keyboard
 {
@@ -13,7 +13,7 @@ namespace keyboard
     tusb_init();
   }
   // call this every 10ms to update usb stuff
-  void task(const note *current_note)
+  void task(const absolute_note *current_note)
   {
     tud_task(); // tinyusb device task
     hid_task(current_note);
@@ -22,7 +22,7 @@ namespace keyboard
 
 // Every 10ms, we will sent 1 report for each HID profile (keyboard, mouse etc ..)
 // tud_hid_report_complete_cb() is used to send the next report after previous one is complete
-void hid_task(const note *current_note)
+void hid_task(const absolute_note *current_note)
 {
   // Poll every 10ms
   // const uint32_t interval_ms = 10;
@@ -78,14 +78,11 @@ void tud_resume_cb(void)
 // USB HID
 //--------------------------------------------------------------------+
 
-static void send_hid_report(uint8_t report_id, uint32_t btn, const note *current_note)
+static void send_hid_report(uint8_t report_id, uint32_t btn, const absolute_note *current_note)
 {
   // skip if hid is not ready yet
   if (!tud_hid_ready())
     return;
-
-  // auto note = find_closest_note(fft_max_freq);
-  //  auto note_name = note.name.c_str();
 
   switch (report_id)
   {
@@ -94,10 +91,35 @@ static void send_hid_report(uint8_t report_id, uint32_t btn, const note *current
     // use to avoid send multiple consecutive zero report for keyboard
     static bool has_keyboard_key = false;
 
-    if (current_note != NULL && current_note->name == "A#6")
+    if (current_note != NULL)
     {
       uint8_t keycode[6] = {0};
-      keycode[0] = HID_KEY_A;
+
+      if (current_note->octave == 5 && current_note->sharp == false)
+      {
+        switch (current_note->value)
+        {
+        case note::A:
+          keycode[0] = HID_KEY_A;
+          break;
+        case note::B:
+          keycode[0] = HID_KEY_S;
+          break;
+        case note::C:
+          keycode[0] = HID_KEY_W;
+          break;
+        case note::D:
+          keycode[0] = HID_KEY_D;
+          break;
+        case note::E:
+          keycode[0] = HID_KEY_SPACE;
+          break;
+        case note::F:
+          keycode[0] = HID_KEY_SPACE;
+          keycode[1] = HID_KEY_W;
+          break;
+        }
+      }
 
       tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keycode);
       has_keyboard_key = true;
@@ -117,61 +139,40 @@ static void send_hid_report(uint8_t report_id, uint32_t btn, const note *current
     int8_t const delta = 5;
 
     // no button, right + down, no scroll, no pan
-    tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, delta, delta, 0, 0);
-  }
-  break;
+    // tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, delta, delta, 0, 0);
 
-  case REPORT_ID_CONSUMER_CONTROL:
-  {
-    // use to avoid send multiple consecutive zero report
-    static bool has_consumer_key = false;
-
-    if (btn)
+    if (current_note != NULL)
     {
-      // volume down
-      uint16_t volume_down = HID_USAGE_CONSUMER_VOLUME_DECREMENT;
-      tud_hid_report(REPORT_ID_CONSUMER_CONTROL, &volume_down, 2);
-      has_consumer_key = true;
-    }
-    else
-    {
-      // send empty key report (release key) if previously has key pressed
-      uint16_t empty_key = 0;
-      if (has_consumer_key)
-        tud_hid_report(REPORT_ID_CONSUMER_CONTROL, &empty_key, 2);
-      has_consumer_key = false;
-    }
-  }
-  break;
-
-  case REPORT_ID_GAMEPAD:
-  {
-    // use to avoid send multiple consecutive zero report for keyboard
-    static bool has_gamepad_key = false;
-
-    hid_gamepad_report_t report =
+      if (current_note->octave == 6 && current_note->sharp == false)
+      {
+        switch (current_note->value)
         {
-            .x = 0, .y = 0, .z = 0, .rz = 0, .rx = 0, .ry = 0, .hat = 0, .buttons = 0};
-
-    if (btn)
-    {
-      report.hat = GAMEPAD_HAT_UP;
-      report.buttons = GAMEPAD_BUTTON_A;
-      tud_hid_report(REPORT_ID_GAMEPAD, &report, sizeof(report));
-
-      has_gamepad_key = true;
-    }
-    else
-    {
-      report.hat = GAMEPAD_HAT_CENTERED;
-      report.buttons = 0;
-      if (has_gamepad_key)
-        tud_hid_report(REPORT_ID_GAMEPAD, &report, sizeof(report));
-      has_gamepad_key = false;
+        case note::A:
+          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, -5, 0, 0, 0);
+          break;
+        case note::B:
+          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 5, 0, 0, 0);
+          break;
+        case note::C:
+          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 0, -5, 0, 0);
+          break;
+        case note::D:
+          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 0, 5, 0, 0);
+          break;
+        case note::E:
+          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x01, 0, 0, 0, 0);
+          break;
+        case note::F:
+          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x02, 0, 0, 0, 0);
+          break;
+        case note::G:
+          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 0, 0, 0x01, 0);
+          break;
+        }
+      }
     }
   }
   break;
-
   default:
     break;
   }
