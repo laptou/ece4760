@@ -31,6 +31,7 @@
 // Include Pico libraries
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
+#include "pico/time.h"
 // Include hardware libraries
 #include "hardware/adc.h"
 #include "hardware/dma.h"
@@ -46,6 +47,7 @@
 #include "notes.h"
 
 spin_lock_t *fft_data_lock;
+const note *current_note;
 
 // FFT thread
 static PT_THREAD(protothread_fft(struct pt *pt))
@@ -82,6 +84,7 @@ static PT_THREAD(protothread_fft(struct pt *pt))
     // Compute the FFT
     fft_fix(fft_sample_real, fft_sample_imag);
     fft_compute_magnitudes();
+    current_note = &find_closest_note(fft_max_freq);
 
     // Unlock spinlock
     PT_LOCK_RELEASE(fft_data_lock);
@@ -113,8 +116,8 @@ static PT_THREAD(protothread_vga(struct pt *pt))
 
     // Display on VGA
     vga_fill_rect(250, 20, 176, 30, BLACK); // red box
-    auto note = find_closest_note(fft_max_freq);
-    sprintf(freqtext, "%d (%s)", (int)fft_max_freq, note.name.c_str());
+    std::string name = current_note->name;
+    sprintf(freqtext, "%d (%s)", (int)fft_max_freq, name.c_str());
     vga_cursor(250, 20);
     vga_write_string(freqtext);
 
@@ -157,8 +160,14 @@ static PT_THREAD(protothread_usb(struct pt *pt))
 
   while (1)
   {
-    keyboard::task();
-    PT_YIELD_usec(10000);
+    auto start = get_absolute_time();
+    // PT_LOCK_WAIT(pt, fft_data_lock);
+    keyboard::task(current_note);
+    // PT_LOCK_RELEASE(fft_data_lock);
+    auto end = get_absolute_time();
+    auto diff = absolute_time_diff_us(start, end);
+    auto delay = std::max((long long int)10, 10000 - diff);
+    PT_YIELD_usec(delay);
   }
 
   PT_END(pt);

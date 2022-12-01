@@ -1,7 +1,9 @@
 #include "keyboard.h"
+#include "../fft/fft.h"
+#include "../notes.h"
 
-static void send_hid_report(uint8_t report_id, uint32_t btn);
-void hid_task(void);
+static void send_hid_report(uint8_t report_id, uint32_t btn, const note *current_note);
+void hid_task(const note *current_note);
 
 namespace keyboard
 {
@@ -11,24 +13,24 @@ namespace keyboard
     tusb_init();
   }
   // call this every 10ms to update usb stuff
-  void task()
+  void task(const note *current_note)
   {
     tud_task(); // tinyusb device task
-    hid_task();
+    hid_task(current_note);
   }
 }
 
 // Every 10ms, we will sent 1 report for each HID profile (keyboard, mouse etc ..)
 // tud_hid_report_complete_cb() is used to send the next report after previous one is complete
-void hid_task(void)
+void hid_task(const note *current_note)
 {
   // Poll every 10ms
-  const uint32_t interval_ms = 10;
-  static uint32_t start_ms = 0;
+  // const uint32_t interval_ms = 10;
+  // static uint32_t start_ms = 0;
 
-  if (board_millis() - start_ms < interval_ms)
-    return; // not enough time
-  start_ms += interval_ms;
+  // if (board_millis() - start_ms < interval_ms)
+  //   return; // not enough time
+  // start_ms += interval_ms;
 
   uint32_t const btn = board_button_read();
 
@@ -42,7 +44,7 @@ void hid_task(void)
   else
   {
     // Send the 1st of report chain, the rest will be sent by tud_hid_report_complete_cb()
-    send_hid_report(REPORT_ID_KEYBOARD, btn);
+    send_hid_report(REPORT_ID_KEYBOARD, btn, current_note);
   }
 }
 
@@ -76,11 +78,14 @@ void tud_resume_cb(void)
 // USB HID
 //--------------------------------------------------------------------+
 
-static void send_hid_report(uint8_t report_id, uint32_t btn)
+static void send_hid_report(uint8_t report_id, uint32_t btn, const note *current_note)
 {
   // skip if hid is not ready yet
   if (!tud_hid_ready())
     return;
+
+  // auto note = find_closest_note(fft_max_freq);
+  //  auto note_name = note.name.c_str();
 
   switch (report_id)
   {
@@ -89,7 +94,7 @@ static void send_hid_report(uint8_t report_id, uint32_t btn)
     // use to avoid send multiple consecutive zero report for keyboard
     static bool has_keyboard_key = false;
 
-    if (btn)
+    if (current_note != NULL && current_note->name == "A#6")
     {
       uint8_t keycode[6] = {0};
       keycode[0] = HID_KEY_A;
@@ -184,7 +189,7 @@ void tud_hid_report_complete_cb(uint8_t instance, uint8_t const *report, uint8_t
 
   if (next_report_id < REPORT_ID_COUNT)
   {
-    send_hid_report(next_report_id, board_button_read());
+    send_hid_report(next_report_id, board_button_read(), NULL);
   }
 }
 
