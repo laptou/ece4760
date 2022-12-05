@@ -2,27 +2,31 @@
 #include "../fft/fft.h"
 #include "../notes.h"
 
-static void send_hid_report(uint8_t report_id, uint32_t btn, const absolute_note *current_note);
-void hid_task(const absolute_note *current_note);
+static void send_hid_report(uint8_t report_id, uint32_t btn);
+void hid_task();
 
 namespace keyboard
 {
+  const absolute_note *current_note;
+
   void init()
   {
     board_init();
     tusb_init();
   }
+
   // call this every 10ms to update usb stuff
-  void task(const absolute_note *current_note)
+  void task(const absolute_note *new_note)
   {
+    current_note = new_note;
     tud_task(); // tinyusb device task
-    hid_task(current_note);
+    hid_task();
   }
 }
 
 // Every 10ms, we will sent 1 report for each HID profile (keyboard, mouse etc ..)
 // tud_hid_report_complete_cb() is used to send the next report after previous one is complete
-void hid_task(const absolute_note *current_note)
+void hid_task()
 {
   // Poll every 10ms
   // const uint32_t interval_ms = 10;
@@ -44,7 +48,7 @@ void hid_task(const absolute_note *current_note)
   else
   {
     // Send the 1st of report chain, the rest will be sent by tud_hid_report_complete_cb()
-    send_hid_report(REPORT_ID_KEYBOARD, btn, current_note);
+    send_hid_report(REPORT_ID_KEYBOARD, btn);
   }
 }
 
@@ -78,11 +82,13 @@ void tud_resume_cb(void)
 // USB HID
 //--------------------------------------------------------------------+
 
-static void send_hid_report(uint8_t report_id, uint32_t btn, const absolute_note *current_note)
+static void send_hid_report(uint8_t report_id, uint32_t btn)
 {
   // skip if hid is not ready yet
   if (!tud_hid_ready())
     return;
+
+  auto current_note = keyboard::current_note;
 
   switch (report_id)
   {
@@ -136,40 +142,36 @@ static void send_hid_report(uint8_t report_id, uint32_t btn, const absolute_note
 
   case REPORT_ID_MOUSE:
   {
-    int8_t const delta = 5;
-
-    // no button, right + down, no scroll, no pan
-    // tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, delta, delta, 0, 0);
-
-    if (current_note != NULL)
+    if (current_note != NULL && current_note->octave == 6 && current_note->sharp == false)
     {
-      if (current_note->octave == 6 && current_note->sharp == false)
+      switch (current_note->value)
       {
-        switch (current_note->value)
-        {
-        case note::A:
-          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, -5, 0, 0, 0);
-          break;
-        case note::B:
-          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 5, 0, 0, 0);
-          break;
-        case note::C:
-          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 0, -5, 0, 0);
-          break;
-        case note::D:
-          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 0, 5, 0, 0);
-          break;
-        case note::E:
-          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x01, 0, 0, 0, 0);
-          break;
-        case note::F:
-          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x02, 0, 0, 0, 0);
-          break;
-        case note::G:
-          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 0, 0, 0x01, 0);
-          break;
-        }
+      case note::A:
+        tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, -5, 0, 0, 0);
+        break;
+      case note::B:
+        tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 5, 0, 0, 0);
+        break;
+      case note::C:
+        tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 0, -5, 0, 0);
+        break;
+      case note::D:
+        tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 0, 5, 0, 0);
+        break;
+      case note::E:
+        tud_hid_mouse_report(REPORT_ID_MOUSE, 0x01, 0, 0, 0, 0);
+        break;
+      case note::F:
+        tud_hid_mouse_report(REPORT_ID_MOUSE, 0x02, 0, 0, 0, 0);
+        break;
+      case note::G:
+        tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 0, 0, 0x01, 0);
+        break;
       }
+    }
+    else
+    {
+      tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 0, 0, 0, 0);
     }
   }
   break;
@@ -188,9 +190,9 @@ void tud_hid_report_complete_cb(uint8_t instance, uint8_t const *report, uint8_t
 
   uint8_t next_report_id = report[0] + 1;
 
-  if (next_report_id < REPORT_ID_COUNT)
+  if (next_report_id < REPORT_ID_GAMEPAD)
   {
-    send_hid_report(next_report_id, board_button_read(), NULL);
+    send_hid_report(next_report_id, board_button_read());
   }
 }
 
@@ -205,8 +207,7 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
   (void)report_type;
   (void)buffer;
   (void)reqlen;
-
-  return 0;
+  ww return 0;
 }
 
 // Invoked when received SET_REPORT control request or

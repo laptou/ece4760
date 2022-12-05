@@ -176,6 +176,9 @@ static PT_THREAD(protothread_usb(struct pt *pt))
 // Entry point for core 1
 void core1_entry()
 {
+  // without this sleep, fft is unreliable b/c vga thread sometimes acquires
+  // lock before the fft thread does
+  sleep_ms(500);
   pt_add_thread(protothread_vga);
   pt_add_thread(protothread_usb);
   pt_schedule_start;
