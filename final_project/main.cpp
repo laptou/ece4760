@@ -33,18 +33,18 @@
 #include "pico/stdlib.h"
 #include "pico/time.h"
 // Include hardware libraries
+#include "fft/fft.h"
+#include "fpmath/fpmath.h"
+#include "fpmath/vecmath.h"
 #include "hardware/adc.h"
 #include "hardware/dma.h"
 #include "hardware/irq.h"
 #include "hardware/pio.h"
 #include "hardware/sync.h"
-#include "pt_cornell_rp2040_v1.h"
-#include "vga/vga.h"
-#include "fft/fft.h"
-#include "fpmath/fpmath.h"
-#include "fpmath/vecmath.h"
 #include "keyboard/keyboard.h"
 #include "notes.h"
+#include "pt_cornell_rp2040_v1.h"
+#include "vga/vga.h"
 
 spin_lock_t *fft_data_lock;
 const absolute_note *current_note;
@@ -62,8 +62,7 @@ static PT_THREAD(protothread_fft(struct pt *pt))
   // Will be used to write dynamic text to screen
   static char freqtext[40];
 
-  while (1)
-  {
+  while (1) {
     // Wait for NUM_SAMPLES samples to be gathered
     // Measure wait time with timer. THIS IS BLOCKING
     dma_channel_wait_for_finish_blocking(FFT_DMA_SAMPLE_CHAN);
@@ -71,20 +70,24 @@ static PT_THREAD(protothread_fft(struct pt *pt))
     PT_LOCK_WAIT(pt, fft_data_lock);
 
     // Copy/window elements into a fixed-point array
-    for (size_t i = 0; i < NUM_SAMPLES; i++)
-    {
+    for (size_t i = 0; i < NUM_SAMPLES; i++) {
       fft_sample_real[i] =
           fixed::from((int)fft_raw_sample_array[i]) * fft_window_lut[i];
       fft_sample_imag[i] = fixed::zero();
     }
 
-    // Restart the sample channel, now that we have our copy of the samples
+    // Restart the sample channel, noaaaaaaaaaaaaaaw that we have our copy of the samples
     dma_channel_start(FFT_DMA_CONTROL_CHAN);
 
     // Compute the FFT
     fft_fix(fft_sample_real, fft_sample_imag);
     fft_compute_magnitudes();
-    current_note = &find_closest_note(fft_max_freq);
+
+    if (fft_sample_real[fft_max_freq_idx] > fixed::from(2.5f)) {
+      current_note = &find_closest_note(fft_max_freq);
+    } else {
+      current_note = NULL;
+    }
 
     // Unlock spinlock
     PT_LOCK_RELEASE(fft_data_lock);
@@ -110,20 +113,25 @@ static PT_THREAD(protothread_vga(struct pt *pt))
   // Will be used to write dynamic text to screen
   static char freqtext[40];
 
-  while (1)
-  {
+  while (1) {
     PT_LOCK_WAIT(pt, fft_data_lock);
 
     // Display on VGA
     vga_fill_rect(250, 20, 176, 30, BLACK); // red box
-    std::string name = current_note->str();
-    sprintf(freqtext, "%d (%s)", (int)fft_max_freq, name.c_str());
+    if (current_note != NULL) {
+      std::string name = current_note->str();
+      sprintf(
+          freqtext, "%d (%s) %.3f", (int)fft_max_freq, name.c_str(),
+          (float)fft_sample_real[fft_max_freq_idx]
+      );
+    } else {
+      sprintf(freqtext, "no note");
+    }
     vga_cursor(250, 20);
     vga_write_string(freqtext);
 
     // Update the FFT display
-    for (int i = 5; i < (NUM_SAMPLES >> 1); i++)
-    {
+    for (int i = 5; i < (NUM_SAMPLES >> 1); i++) {
       vga_vline(59 + i, 50, 429, BLACK);
       auto height = (int)(fft_sample_real[i] * fixed::from(36));
       vga_vline(59 + i, 479 - height, height, WHITE);
@@ -142,8 +150,7 @@ static PT_THREAD(protothread_serial(struct pt *pt))
   printf("rp2040 recorder keyboard v0.1\n");
   static char classifier;
 
-  while (1)
-  {
+  while (1) {
     PT_YIELD_usec(100000);
     sprintf(pt_serial_out_buffer, "freq: %d\n", int(fft_max_freq));
     serial_write;
@@ -158,8 +165,7 @@ static PT_THREAD(protothread_usb(struct pt *pt))
 
   keyboard::init();
 
-  while (1)
-  {
+  while (1) {
     auto start = get_absolute_time();
     // PT_LOCK_WAIT(pt, fft_data_lock);
     keyboard::task(current_note);
@@ -251,9 +257,9 @@ int main()
 
   // CONTROL CHANNEL
   channel_config_set_transfer_data_size(&c3, DMA_SIZE_32); // 32-bit txfers
-  channel_config_set_read_increment(&c3, false);           // no read incrementing
-  channel_config_set_write_increment(&c3, false);          // no write incrementing
-  channel_config_set_chain_to(&c3, FFT_DMA_SAMPLE_CHAN);   // chain to sample chan
+  channel_config_set_read_increment(&c3, false);  // no read incrementing
+  channel_config_set_write_increment(&c3, false); // no write incrementing
+  channel_config_set_chain_to(&c3, FFT_DMA_SAMPLE_CHAN); // chain to sample chan
 
   dma_channel_configure(
       FFT_DMA_CONTROL_CHAN, // Channel to be configured
@@ -261,8 +267,8 @@ int main()
       &dma_hw->ch[FFT_DMA_SAMPLE_CHAN]
            .write_addr,        // Write address (channel 0 read address)
       &sample_address_pointer, // Read address (POINTER TO AN ADDRESS)
-      1,                       // Number of transfers, in this case each is 4 byte
-      false                    // Don't start immediately.
+      1,    // Number of transfers, in this case each is 4 byte
+      false // Don't start immediately.
   );
 
   // Claim and initialize a spinlock
