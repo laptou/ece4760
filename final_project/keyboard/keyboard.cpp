@@ -73,6 +73,8 @@ void tud_resume_cb(void) {}
 // USB HID
 //--------------------------------------------------------------------+
 
+bool click_lock = false;
+
 static void send_hid_report(uint8_t report_id, uint32_t btn)
 {
   // skip if hid is not ready yet
@@ -115,26 +117,47 @@ static void send_hid_report(uint8_t report_id, uint32_t btn)
   } break;
 
   case REPORT_ID_MOUSE: {
+    auto speed = 15;
     if (current_note != NULL) {
       if (current_note->octave == 5) {
         if (current_note->value == note::F && current_note->sharp == false) {
-          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, -10, 0, 0, 0);
+          tud_hid_mouse_report(
+              REPORT_ID_MOUSE, click_lock ? 0x01 : 0x00, -speed, 0, 0, 0
+          );
         } else if (current_note->value == note::F && current_note->sharp == true) {
-          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 10, 0, 0, 0);
+          tud_hid_mouse_report(
+              REPORT_ID_MOUSE, click_lock ? 0x01 : 0x00, speed, 0, 0, 0
+          );
         } else if (current_note->value == note::G && current_note->sharp == false) {
-          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 0, -10, 0, 0);
+          tud_hid_mouse_report(
+              REPORT_ID_MOUSE, click_lock ? 0x01 : 0x00, 0, -speed, 0, 0
+          );
         } else if (current_note->value == note::G && current_note->sharp == true) {
-          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 0, 10, 0, 0);
+          tud_hid_mouse_report(
+              REPORT_ID_MOUSE, click_lock ? 0x01 : 0x00, 0, speed, 0, 0
+          );
         } else if (current_note->value == note::A && current_note->sharp == false) {
+          click_lock = false;
           tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 0, 0, 1, 0); // scroll
         } else if (current_note->value == note::A && current_note->sharp == true) {
-          tud_hid_mouse_report(REPORT_ID_MOUSE, 0x02, 0, 0, 0, 0);
+          click_lock = false;
+          tud_hid_mouse_report(
+              REPORT_ID_MOUSE, 0x02, 0, 0, 0, 0
+          ); // right click
+        } else if (current_note->value == note::B && current_note->sharp == false) {
+          click_lock = !click_lock;
+          tud_hid_mouse_report(
+              REPORT_ID_MOUSE, click_lock ? 0x01 : 0x00, 0, 0, 0, 0
+          ); // left click
         }
       } else if (current_note->octave == 6) {
-        tud_hid_mouse_report(REPORT_ID_MOUSE, 0x01, 0, 0, 0, 0);
+        click_lock = false;
+        tud_hid_mouse_report(REPORT_ID_MOUSE, 0x01, 0, 0, 0, 0); // left click
       }
     } else {
-      tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, 0, 0, 0, 0);
+      tud_hid_mouse_report(
+          REPORT_ID_MOUSE, click_lock ? 0x01 : 0x00, 0, 0, 0, 0
+      );
     }
   } break;
   default:
@@ -154,7 +177,7 @@ void tud_hid_report_complete_cb(
 
   uint8_t next_report_id = report[0] + 1;
 
-  if (next_report_id < REPORT_ID_GAMEPAD) {
+  if (next_report_id < REPORT_ID_CONSUMER_CONTROL) {
     send_hid_report(next_report_id, board_button_read());
   }
 }

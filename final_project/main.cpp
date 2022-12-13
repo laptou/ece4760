@@ -164,7 +164,7 @@ static PT_THREAD(protothread_usb(struct pt *pt))
   PT_BEGIN(pt);
 
   keyboard::init();
-
+  
   while (1) {
     auto start = get_absolute_time();
     // PT_LOCK_WAIT(pt, fft_data_lock);
